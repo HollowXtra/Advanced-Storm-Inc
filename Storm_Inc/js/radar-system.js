@@ -1,53 +1,64 @@
 /**
- * radar-renderer.js
- * 使用 WebGL 硬件加速渲染雷达回波
- * 并提供高精度的 CPU 端物理计算接口 (已校准一致性)
+ * RADAR SYSTEM PRECIPITATION ENHANCEMENT
+ * 
+ * KEY IMPROVEMENTS FOR MONSOON DEPRESSIONS & WET TYPHOONS:
+ * 
+ * 1. MOISTURE-BASED PRECIPITATION EXPANSION
+ *    - High humidity (>70%) → Widespread stratiform rain bands
+ *    - Monsoon depression flag → Extended mesoscale precipitation
+ *    - Dry environments → Concentrated eyewall rain only
+ * 
+ * 2. MULTI-LAYER PRECIPITATION STRUCTURE
+ *    - Inner core (eyewall) - Always present, high intensity
+ *    - Primary rain bands (50-300km) - Spiral bands with convection
+ *    - Stratiform shield (300-600km) - Light to moderate, moisture-dependent
+ *    - Outer feeder bands (600-900km) - Very light, only in wet environments
+ * 
+ * 3. MONSOON DEPRESSION CHARACTERISTICS
+ *    - Broader, less organized structure
+ *    - More uniform precipitation distribution
+ *    - Lower peak intensities but wider coverage
+ *    - Less asymmetry, more symmetric rain pattern
  */
+import { getWindVectorAt } from './cyclone-model.js';
 import { getElevationAt } from './terrain-data.js';
 import { calculateBackgroundHumidity } from './visualization.js';
-
 // ============================================================
-// GLSL Fragment Shader (物理核心 - 用于画面渲染)
+// ENHANCED GLSL FRAGMENT SHADER
 // ============================================================
 const fsSource = `
-    // [修改] 强制使用高精度浮点数
     precision highp float;
 
-    // --- Uniforms ---
+    // --- Uniforms (same as before) ---
     uniform vec2 u_resolution;       
     uniform float u_time;            
     uniform vec2 u_radar_center;     
     uniform float u_radar_radius_km; 
     uniform float u_noise_seed;      
     
-    // 气旋参数
     uniform int u_has_cyclone;       
     uniform vec2 u_cyc_pos;          
     uniform float u_cyc_size;        
     uniform float u_cyc_intensity;   
     uniform float u_cyc_age;         
+    uniform int u_is_monsoon_depression;  // [NEW] Flag for monsoon depression
 
     uniform vec4 u_sys_params[20]; 
     uniform float u_sys_strength[20];
     uniform float u_env_humidity;
-
     uniform int u_sys_count;
     uniform sampler2D u_terrain_map;
 
     const float PI = 3.14159265359;
-    const float DEG_TO_RAD = 0.01745329251;
 
-    // [关键修改] 使用无正弦哈希 (Hash without Sine) 替代 fract(sin(...))
-    // 这能确保 GPU 和 CPU (Math.fround) 计算出的随机数完全一致
-    // Dave_Hoskins Hash12
+    // Hash function
     float random(vec2 p) {
         vec2 p2 = p + vec2(u_noise_seed);
-        vec3 p3  = fract(vec3(p2.xyx) * .1031);
+        vec3 p3 = fract(vec3(p2.xyx) * .1031);
         p3 += dot(p3, p3.yzx + 33.33);
         return fract((p3.x + p3.y) * p3.z);
     }
 
-    // 噪声函数 (调用新的 random)
     float noise(vec2 st) {
         vec2 i = floor(st);
         vec2 f = fract(st);
@@ -59,11 +70,9 @@ const fsSource = `
         return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.y * u.x;
     }
 
-    // 分形布朗运动 (FBM)
     float fbm(vec2 st, int octaves) {
         float value = 0.0;
         float amp = 0.5;
-        // 手动展开循环
         value += noise(st) * amp; st *= 2.0; amp *= 0.5;
         value += noise(st) * amp; st *= 2.0; amp *= 0.5;
         if (octaves > 2) {
@@ -72,24 +81,20 @@ const fsSource = `
         return value;
     }
     
-    // 颜色映射 (dBZ -> RGBA)
     vec4 getRadarColor(float dbz) {
         if (dbz < 15.0) return vec4(0.0);
-        if (dbz < 20.0) return vec4(0.0, 0.65, 0.95, 0.35); // Cyan
-        if (dbz < 30.0) return vec4(0.0, 0.85, 0.0, 0.55); // Green
+        if (dbz < 20.0) return vec4(0.0, 0.65, 0.95, 0.35);
+        if (dbz < 30.0) return vec4(0.0, 0.85, 0.0, 0.55);
         if (dbz < 40.0) return vec4(0.0, 0.60, 0.0, 0.7);
-        if (dbz < 45.0) return vec4(1.0, 1.0, 0.0, 0.8); // Yellow
-        if (dbz < 50.0) return vec4(1.0, 0.65, 0.0, 0.9); // Orange
+        if (dbz < 45.0) return vec4(1.0, 1.0, 0.0, 0.8);
+        if (dbz < 50.0) return vec4(1.0, 0.65, 0.0, 0.9);
         if (dbz < 55.0) return vec4(1.0, 0.1, 0.1, 0.95);
-        if (dbz < 60.0) return vec4(0.9, 0.0, 0.0, 0.95); // Red
+        if (dbz < 60.0) return vec4(0.9, 0.0, 0.0, 0.95);
         if (dbz < 65.0) return vec4(1.0, 0.0, 0.9, 1.0);
         if (dbz < 70.0) return vec4(0.6, 0.0, 0.2, 1.0);
-        return vec4(0.9, 0.9, 1.0, 1.0);                 // Purple
+        return vec4(0.9, 0.9, 1.0, 1.0);
     }
 
-    // ------------------------------------------
-    // 物理计算辅助函数 (简化版)
-    // ------------------------------------------
     float getElevation(vec2 pos) {
         float u = (pos.x + 180.0) / 360.0;
         float v = (90.0 - pos.y) / 180.0;
@@ -154,6 +159,82 @@ const fsSource = `
         return wind_bg + wind_cyc;
     }
 
+    // [NEW] Enhanced precipitation calculation
+    float calculateStratiformRain(float dist_rmw, float humidity, float intensity, vec2 world_pos, float angle, float rotOffset) {
+        // Stratiform rain only develops in moist environments
+        if (humidity < 0.55) return 0.0;
+        
+        // Distance-based intensity (peaks at 2-4 RMW from center)
+        float stratRange = smoothstep(1.5, 2.5, dist_rmw) * (1.0 - smoothstep(5.0, 8.0, dist_rmw));
+        
+        // Moisture enhancement
+        float moistureBoost = smoothstep(0.55, 0.85, humidity) * 1.5;
+        
+        // Large-scale cloud pattern
+        vec2 cloudPos = world_pos * 1.5;
+        float cloudNoise = fbm(cloudPos, 3);
+        
+        // Base stratiform intensity (15-35 dBZ typical for stratiform)
+        float baseDbz = 18.0 + 17.0 * cloudNoise;
+        
+        // Apply all factors
+        return baseDbz * stratRange * moistureBoost;
+    }
+
+    // [NEW] Outer feeder bands (only in very moist conditions)
+    float calculateFeederBands(float dist_rmw, float humidity, vec2 world_pos, float angle, float rotOffset) {
+        if (humidity < 0.70) return 0.0;
+        if (dist_rmw < 5.0 || dist_rmw > 12.0) return 0.0;
+        
+        // Spiral pattern for feeder bands
+        float spiral = sin(angle * 3.0 + dist_rmw * 0.8 + rotOffset);
+        float spiralMask = smoothstep(-0.3, 0.4, spiral);
+        
+        // Cloud texture
+        float cloudTexture = fbm(world_pos * 2.0, 2);
+        
+        // Distance fade
+        float fadein = smoothstep(5.0, 6.5, dist_rmw);
+        float fadeout = 1.0 - smoothstep(10.0, 12.0, dist_rmw);
+        
+        // Moisture-dependent intensity
+        float moistureFactor = smoothstep(0.70, 0.90, humidity);
+        
+        float dbz = (12.0 + 8.0 * cloudTexture) * spiralMask * fadein * fadeout * moistureFactor;
+        
+        return dbz;
+    }
+
+    // [NEW] Monsoon depression precipitation pattern
+    float calculateMonsoonPrecip(float dist_km, float humidity, vec2 world_pos, float intensity) {
+        // Monsoon depressions have very broad, relatively uniform rain
+        float maxRange = 400.0 + (intensity - 20.0) * 3.0; // 400-600km typical
+        
+        if (dist_km > maxRange) return 0.0;
+        
+        // Gentle radial falloff (much slower than typhoon)
+        float radialFalloff = 1.0 - smoothstep(0.0, maxRange, dist_km);
+        radialFalloff = pow(radialFalloff, 0.4); // Gentle power curve
+        
+        // Multi-scale cloud structure
+        float largeScale = fbm(world_pos * 0.8, 3); // Mesoscale cloud clusters
+        float mediumScale = fbm(world_pos * 2.5, 2); // Individual cells
+        
+        // Combine scales with weighting
+        float cloudStructure = largeScale * 0.6 + mediumScale * 0.4;
+        
+        // Moisture modulation
+        float moistureEffect = smoothstep(0.60, 0.85, humidity);
+        
+        // Base intensity (monsoon depressions: 20-45 dBZ typical, with embedded convection)
+        float baseDbz = 22.0 + 25.0 * cloudStructure;
+        
+        // Central enhancement (weak compared to typhoons)
+        float centralBoost = 1.0 + 0.3 * smoothstep(250.0, 50.0, dist_km);
+        
+        return baseDbz * radialFalloff * moistureEffect * centralBoost;
+    }
+
     void main() {
         vec2 st = gl_FragCoord.xy / u_resolution; 
         vec2 center = vec2(0.5);
@@ -163,24 +244,23 @@ const fsSource = `
         float max_radius = 0.97 + 0.03 * edge_noise;
         float dist_ratio = length(offset) * 2.0;
         
-        if (dist_ratio > max_radius) discard; 
+        if (dist_ratio > max_radius) discard;
 
-        // 物理距离映射
         float dist_km = dist_ratio * u_radar_radius_km;
         vec2 px_offset_km = offset * (u_radar_radius_km * 2.0);
-        vec2 world_pos = u_radar_center + px_offset_km / 111.0; 
+        vec2 world_pos = u_radar_center + px_offset_km / 111.0;
         world_pos.x = u_radar_center.x + px_offset_km.x / 111.0;
 
         vec2 wind = getWindVector(world_pos);
-        float wind_speed = length(wind); 
+        float wind_speed = length(wind);
 
-        // 地形抬升
+        // Terrain lift
         float elev = getElevation(world_pos);
         float lift_factor = 0.0;
         float baseHum = (u_env_humidity > 0.0) ? u_env_humidity : 0.7;
 
         if (wind_speed > 10.0) {
-            float step = 0.11; 
+            float step = 0.11;
             float h_x = getElevation(world_pos + vec2(step, 0.0));
             float h_y = getElevation(world_pos + vec2(0.0, step));
             float grad_x = h_x - elev;
@@ -190,8 +270,8 @@ const fsSource = `
 
             if (terrainSteepness > 0.0) {
                 float dot_val = wind.x * grad_x + wind.y * grad_y;
-                if (dot_val > 0.0) { // 简化：假设上游足够湿润
-                    float effectiveHum = max(baseHum, 0.85); 
+                if (dot_val > 0.0) {
+                    float effectiveHum = max(baseHum, 0.85);
                     float moistureEfficiency = smoothstep(0.35, 0.75, effectiveHum);
                     lift_factor = dot_val * 0.15 * moistureEfficiency * terrainSteepness;
                 }
@@ -200,7 +280,9 @@ const fsSource = `
 
         float dbz = 0.0;
 
-        // 气旋渲染
+        // ============================================================
+        // CYCLONE PRECIPITATION
+        // ============================================================
         if (u_has_cyclone > 0) {
             float hemi = (u_cyc_pos.y >= 0.0) ? 1.0 : -1.0;
             vec2 cyc_offset_deg = world_pos - u_cyc_pos;
@@ -209,129 +291,172 @@ const fsSource = `
             cyc_offset_km.x = cyc_offset_deg.x * 111.0 * cos(radians(u_cyc_pos.y));
             float c_dist = length(cyc_offset_km);
             
-            if (c_dist < u_cyc_size * 3.5) {
-                float intensity = u_cyc_intensity;
-                float org = clamp((intensity - 25.0) / 85.0, 0.01, 0.99);
-                float angle = atan(cyc_offset_km.y, cyc_offset_km.x); 
-                float rotOffset = u_cyc_age * 0.2 * hemi;
-                float rmw = (20.0 + u_cyc_size * 0.12) * (1.8 - 0.7 * org);
-                float d = c_dist / rmw;
-
-                float biasAngle = rotOffset * 0.7 + PI;
-                float angleDiff = cos(angle - biasAngle);
-                float asymStrength = 0.7 * (1.0 - org);
-                float asymmetry = max(0.2, 1.0 + asymStrength * angleDiff);
-                float highFreqNoise = fbm(world_pos * 20.0 + u_time * 0.1, 2);
-                vec2 distortUV = world_pos * 4.0;
-                float shapeDistort = fbm(vec2(distortUV.x + u_cyc_age*0.05, distortUV.y), 2);
-
-                float spiralTightness = org * 3.0;
-                float spiralPhase = angle + hemi * (1.0+spiralTightness) * log(d + 0.1);
-                float warp = fbm(world_pos * 3.0, 3) * (1.5 - org) * min(2.0, d);
-                float signal = sin(spiralPhase * 2.0 + rotOffset + warp + shapeDistort * 0.1);
-                signal = smoothstep(-0.3, 0.7, signal);
-
-                float eyewallWidth = 0.20 - 0.10 * (1.0 - org);
-                eyewallWidth *= (0.8 + 0.4 * highFreqNoise);
-                float eyewallShape = exp(-pow(d - 1.0, 4.0) / eyewallWidth) * (1.0 + 0.3 * (intensity - 85.0) / 85.0);
-
-                float moatStrength = smoothstep(0.4, 0.8, org);
-                float moatBase = smoothstep(1.4, 1.7, d) * (1.0 - smoothstep(2.2, 2.7, d));
-                float moatBreaker = fbm(vec2(angle * 1.5, u_cyc_age * 0.01), 2) * (2.0 - asymmetry);
-                float connFactor = 1.0 - (moatBase * smoothstep(0.3, 0.9, moatBreaker) * moatStrength);
-
-                float strongCore = 45.0 * eyewallShape;
-                float breakupMask = smoothstep(0.25, 0.6, highFreqNoise); 
-                strongCore *= (0.95 + 0.1 * breakupMask);
-                strongCore += fbm(world_pos * 8.0 + rotOffset, 2) * 15.0 * eyewallShape;
-                if (d < 0.5 && org > 0.5) {
-                    float holeMask = smoothstep(0.5, 0.0, d);
-                    float digFactor = smoothstep(0.5, 0.9, org);
-                    strongCore *= (1.0 - holeMask * digFactor * 0.9);
-                    if (strongCore < 10.0) strongCore += fbm(world_pos * 40.0, 2) * 8.0;
-                }
-
-                float twist = 3.0 * (1.0 - d); 
-                float cosT = cos(twist + rotOffset);
-                float sinT = sin(twist + rotOffset);
-                vec2 twistedPos = vec2(world_pos.x * cosT - world_pos.y * sinT, world_pos.x * sinT + world_pos.y * cosT);
-                float noiseBase = fbm(twistedPos * 3.0, 3);
-                float commaShape = smoothstep(-0.5, 0.8, angleDiff + 0.3 * noiseBase);
-                float rangeLimit = mix(1.2, 3.5, smoothstep(0.0, 0.6, org));
-                float rangeMask = 1.0 - smoothstep(0.5, rangeLimit, d);
-                float weakCore = 35.0 * noiseBase * commaShape * rangeMask;
-                if (org < 0.15) {
-                    float cells = smoothstep(0.6, 0.8, noiseBase);
-                    weakCore = 30.0 * cells * rangeMask;
-                }
-
-                float blend = smoothstep(0.3, 0.7, org);
-                float coreDbz = mix(weakCore, strongCore, blend);
-
-                float eyeFillFactor = 1.0 - smoothstep(0.4, 0.65, org);
-                if (eyeFillFactor > 0.0 && d < 2.5) { 
-                    vec2 warpOffset = vec2(fbm(world_pos * 1.5 + u_cyc_age * 0.05, 2), fbm(world_pos * 1.5 + u_cyc_age * 0.05 + 50.0, 2));
-                    float distortedDist = length(cyc_offset_km / rmw + (warpOffset - 0.5) * 0.8);
-                    float erosion = fbm(world_pos * 4.0, 3);
-                    float blobShape = smoothstep(2.5, 0.2, distortedDist + erosion * 0.5);
-                    if (blobShape > 0.0) {
-                        float chaoticTexture = fbm(world_pos * 8.0 + u_cyc_age * 0.1, 2);
-                        float fillDbz = 60.0 * chaoticTexture;
-                        coreDbz = max(coreDbz, fillDbz * blobShape * eyeFillFactor);
-                    }
-                }
-
-                float distFade = exp(-max(0.0, d - 1.0) / mix(1.8, 5.0, smoothstep(0.1, 0.7, org)));
-                float bandInnerCutoff = smoothstep(0.4, 0.8, d);
-                float bandAsym = asymmetry;
-                if (asymmetry < 0.6) bandAsym *= (0.5 + 0.5 * fbm(world_pos * 10.0, 2));
-                float stratiform = 15.0 + 20.0 * smoothstep(-0.5, 0.5, signal);
-                float cellNoise = fbm(world_pos * 8.0, 3);
-                float convMask = smoothstep(0.6, 0.9, signal) * smoothstep(0.4, 0.7, cellNoise);
-                float convective = 0.0;
-                if (convMask > 0.1) convective = 30.0 + 25.0 * convMask;
-                if (asymmetry < 0.6) {
-                    asymmetry *= (0.6 + 0.4 * fbm(world_pos * 8.0, 2));
-                    stratiform *= 0.6;
-                    convective *= 0.3;
-                }
-                float bandDbz = max(stratiform, convective);
-                bandDbz = bandDbz * distFade * connFactor * bandAsym * bandInnerCutoff;
-                dbz = max(coreDbz, bandDbz);
+            // [BRANCH: Monsoon Depression vs Tropical Cyclone]
+            if (u_is_monsoon_depression > 0) {
+                // ---- MONSOON DEPRESSION MODE ----
+                dbz = calculateMonsoonPrecip(c_dist, baseHum, world_pos, u_cyc_intensity);
                 
-                if (d > 1.5 && dbz > 0.0) dbz += (fbm(world_pos * 12.0, 2) - 0.4) * 20.0;
+            } else {
+                // ---- TROPICAL CYCLONE MODE ----
+                float maxRange = u_cyc_size * 4.5; // Extended range for wet systems
+                
+                if (c_dist < maxRange) {
+                    float intensity = u_cyc_intensity;
+                    float org = clamp((intensity - 25.0) / 85.0, 0.01, 0.99);
+                    float angle = atan(cyc_offset_km.y, cyc_offset_km.x);
+                    float rotOffset = u_cyc_age * 0.2 * hemi;
+                    float rmw = (20.0 + u_cyc_size * 0.12) * (1.8 - 0.7 * org);
+                    float d = c_dist / rmw; // Normalized distance
 
-                float globalHum = clamp(baseHum, 0.0, 1.0);
-                float humFactor = smoothstep(0.2, 0.7, globalHum);
-                float dryPenalty = (1.0 - humFactor) * 4.0 * (240.0 - intensity) / 160.0;
-                dbz -= dryPenalty;
-                dbz = max(0.0, dbz);
-                float maxSupportableDbz = globalHum * 70.0 + 5.0; 
-                if (dbz > maxSupportableDbz) dbz = mix(dbz, maxSupportableDbz, 0.2);
+                    // Asymmetry calculation
+                    float biasAngle = rotOffset * 0.7 + PI;
+                    float angleDiff = cos(angle - biasAngle);
+                    float asymStrength = 0.7 * (1.0 - org);
+                    float asymmetry = max(0.2, 1.0 + asymStrength * angleDiff);
+                    
+                    float highFreqNoise = fbm(world_pos * 20.0 + u_time * 0.1, 2);
+                    vec2 distortUV = world_pos * 4.0;
+                    float shapeDistort = fbm(vec2(distortUV.x + u_cyc_age*0.05, distortUV.y), 2);
+
+                    // --- INNER CORE (Eyewall) - ALWAYS PRESENT ---
+                    float spiralTightness = org * 3.0;
+                    float spiralPhase = angle + hemi * (1.0+spiralTightness) * log(d + 0.1);
+                    float warp = fbm(world_pos * 3.0, 3) * (1.5 - org) * min(2.0, d);
+                    float signal = sin(spiralPhase * 2.0 + rotOffset + warp + shapeDistort * 0.1);
+                    signal = smoothstep(-0.3, 0.7, signal);
+
+                    float eyewallWidth = 0.20 - 0.10 * (1.0 - org);
+                    eyewallWidth *= (0.8 + 0.4 * highFreqNoise);
+                    float eyewallShape = exp(-pow(d - 1.0, 4.0) / eyewallWidth) * (1.0 + 0.3 * (intensity - 85.0) / 85.0);
+
+                    float moatStrength = smoothstep(0.4, 0.8, org);
+                    float moatBase = smoothstep(1.4, 1.7, d) * (1.0 - smoothstep(2.2, 2.7, d));
+                    float moatBreaker = fbm(vec2(angle * 1.5, u_cyc_age * 0.01), 2) * (2.0 - asymmetry);
+                    float connFactor = 1.0 - (moatBase * smoothstep(0.3, 0.9, moatBreaker) * moatStrength);
+
+                    float strongCore = 45.0 * eyewallShape;
+                    float breakupMask = smoothstep(0.25, 0.6, highFreqNoise);
+                    strongCore *= (0.95 + 0.1 * breakupMask);
+                    strongCore += fbm(world_pos * 8.0 + rotOffset, 2) * 15.0 * eyewallShape;
+                    
+                    // Eye suppression
+                    if (d < 0.5 && org > 0.5) {
+                        float holeMask = smoothstep(0.5, 0.0, d);
+                        float digFactor = smoothstep(0.5, 0.9, org);
+                        strongCore *= (1.0 - holeMask * digFactor * 0.9);
+                        if (strongCore < 10.0) strongCore += fbm(world_pos * 40.0, 2) * 8.0;
+                    }
+
+                    // Weak system structure (for TD/TS)
+                    float twist = 3.0 * (1.0 - d);
+                    float cosT = cos(twist + rotOffset);
+                    float sinT = sin(twist + rotOffset);
+                    vec2 twistedPos = vec2(world_pos.x * cosT - world_pos.y * sinT, world_pos.x * sinT + world_pos.y * cosT);
+                    float noiseBase = fbm(twistedPos * 3.0, 3);
+                    float commaShape = smoothstep(-0.5, 0.8, angleDiff + 0.3 * noiseBase);
+                    float rangeLimit = mix(1.2, 3.5, smoothstep(0.0, 0.6, org));
+                    float rangeMask = 1.0 - smoothstep(0.5, rangeLimit, d);
+                    float weakCore = 35.0 * noiseBase * commaShape * rangeMask;
+                    if (org < 0.15) {
+                        float cells = smoothstep(0.6, 0.8, noiseBase);
+                        weakCore = 30.0 * cells * rangeMask;
+                    }
+
+                    // Blend weak/strong
+                    float blend = smoothstep(0.3, 0.7, org);
+                    float coreDbz = mix(weakCore, strongCore, blend);
+
+                    // Eye fill (for weaker systems)
+                    float eyeFillFactor = 1.0 - smoothstep(0.4, 0.65, org);
+                    if (eyeFillFactor > 0.0 && d < 2.5) {
+                        vec2 warpOffset = vec2(fbm(world_pos * 1.5 + u_cyc_age * 0.05, 2), fbm(world_pos * 1.5 + u_cyc_age * 0.05 + 50.0, 2));
+                        float distortedDist = length(cyc_offset_km / rmw + (warpOffset - 0.5) * 0.8);
+                        float erosion = fbm(world_pos * 4.0, 3);
+                        float blobShape = smoothstep(2.5, 0.2, distortedDist + erosion * 0.5);
+                        if (blobShape > 0.0) {
+                            float chaoticTexture = fbm(world_pos * 8.0 + u_cyc_age * 0.1, 2);
+                            float fillDbz = 60.0 * chaoticTexture;
+                            coreDbz = max(coreDbz, fillDbz * blobShape * eyeFillFactor);
+                        }
+                    }
+
+                    // --- PRIMARY RAIN BANDS (Spirals) ---
+                    float distFade = exp(-max(0.0, d - 1.0) / mix(1.8, 5.0, smoothstep(0.1, 0.7, org)));
+                    float bandInnerCutoff = smoothstep(0.4, 0.8, d);
+                    float bandAsym = asymmetry;
+                    if (asymmetry < 0.6) bandAsym *= (0.5 + 0.5 * fbm(world_pos * 10.0, 2));
+                    
+                    float stratiform = 15.0 + 20.0 * smoothstep(-0.5, 0.5, signal);
+                    float cellNoise = fbm(world_pos * 8.0, 3);
+                    float convMask = smoothstep(0.6, 0.9, signal) * smoothstep(0.4, 0.7, cellNoise);
+                    float convective = 0.0;
+                    if (convMask > 0.1) convective = 30.0 + 25.0 * convMask;
+                    
+                    if (asymmetry < 0.6) {
+                        asymmetry *= (0.6 + 0.4 * fbm(world_pos * 8.0, 2));
+                        stratiform *= 0.6;
+                        convective *= 0.3;
+                    }
+                    
+                    float bandDbz = max(stratiform, convective);
+                    bandDbz = bandDbz * distFade * connFactor * bandAsym * bandInnerCutoff;
+                    
+                    dbz = max(coreDbz, bandDbz);
+                    
+                    // Add texture to outer bands
+                    if (d > 1.5 && dbz > 0.0) dbz += (fbm(world_pos * 12.0, 2) - 0.4) * 20.0;
+
+                    // --- [NEW] STRATIFORM SHIELD (Moisture-dependent) ---
+                    float stratiformDbz = calculateStratiformRain(d, baseHum, intensity, world_pos, angle, rotOffset);
+                    dbz = max(dbz, stratiformDbz);
+                    
+                    // --- [NEW] OUTER FEEDER BANDS (Only in wet environments) ---
+                    float feederDbz = calculateFeederBands(d, baseHum, world_pos, angle, rotOffset);
+                    dbz = max(dbz, feederDbz);
+
+                    // --- MOISTURE MODULATION ---
+                    float globalHum = clamp(baseHum, 0.0, 1.0);
+                    float humFactor = smoothstep(0.2, 0.7, globalHum);
+                    
+                    // Dry air penalty (mainly affects outer regions)
+                    float dryPenalty = (1.0 - humFactor) * 4.0 * (240.0 - intensity) / 160.0;
+                    
+                    // Apply penalty more to outer regions than core
+                    float penaltyMask = smoothstep(0.5, 3.0, d); // Core mostly immune
+                    dbz -= dryPenalty * penaltyMask;
+                    
+                    dbz = max(0.0, dbz);
+                    
+                    // Max supportable reflectivity (moisture ceiling)
+                    float maxSupportableDbz = globalHum * 70.0 + 5.0;
+                    if (dbz > maxSupportableDbz) dbz = mix(dbz, maxSupportableDbz, 0.2);
+                }
             }
         }
 
-        // [环境单体雷暴] - 你的目标代码段
+        // --- ENVIRONMENTAL THUNDERSTORMS (Background) ---
         vec2 windOffset = (wind + 5.0) * u_time * 0.05;
-        vec2 macroPos = (world_pos * 0.6) - windOffset * 0.5; 
-        float macroNoise = fbm(macroPos, 2); 
-        vec2 microPos = (world_pos * 5.0) - windOffset; 
-        float cellNoise = fbm(microPos, 2); 
+        vec2 macroPos = (world_pos * 0.6) - windOffset * 0.5;
+        float macroNoise = fbm(macroPos, 2);
+        vec2 microPos = (world_pos * 5.0) - windOffset;
+        float cellNoise = fbm(microPos, 2);
         float stormStructure = macroNoise * cellNoise * 2.5;
         
-        float baseThreshold = 0.6 - (baseHum * 0.4); 
+        float baseThreshold = 0.6 - (baseHum * 0.4);
         
         if (stormStructure > baseThreshold) {
             float intensity = (stormStructure - baseThreshold) / (1.0 - baseThreshold);
-            intensity = pow(intensity, 1.5); 
+            intensity = pow(intensity, 1.5);
             float grain = random(microPos * 1.0);
             float ambientDbz = 60.0 * intensity + 5.0 * grain;
             ambientDbz *= smoothstep(0.4, 0.8, baseHum);
             dbz = max(dbz, ambientDbz);
         }
 
-        dbz += lift_factor * 0.16; 
+        // Add terrain lift
+        dbz += lift_factor * 0.16;
         dbz = max(0.0, dbz);
+        
         gl_FragColor = getRadarColor(dbz);
     }
 `;
@@ -738,7 +863,9 @@ export class RadarRenderer {
         this.u_radar_center = gl.getUniformLocation(this.program, "u_radar_center");
         this.u_radar_radius_km = gl.getUniformLocation(this.program, "u_radar_radius_km");
         this.u_noise_seed = gl.getUniformLocation(this.program, "u_noise_seed"); // [新增]
-        
+        this.u_is_monsoon_depression = gl.getUniformLocation(
+       this.program, "u_is_monsoon_depression");
+
         this.u_sys_params = this.gl.getUniformLocation(this.program, "u_sys_params");
         this.u_sys_strength = this.gl.getUniformLocation(this.program, "u_sys_strength");
         
@@ -772,7 +899,8 @@ export class RadarRenderer {
         // 在开始渲染之前清除颜色缓冲区
         gl.clearColor(0.0, 0.0, 0.0, 0.0); // 设置清除颜色为透明黑色
         gl.clear(gl.COLOR_BUFFER_BIT);
-
+        gl.uniform1i(this.u_is_monsoon_depression, 
+                cyclone.isMonsoonDepression ? 1 : 0);
         // [修改] 如果模拟已结束（气旋消散），则直接清空画面，不再渲染环境雷暴
         if (state.cyclone && state.cyclone.status === 'dissipated') {
             return;

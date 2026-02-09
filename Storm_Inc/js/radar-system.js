@@ -863,8 +863,7 @@ export class RadarRenderer {
         this.u_radar_center = gl.getUniformLocation(this.program, "u_radar_center");
         this.u_radar_radius_km = gl.getUniformLocation(this.program, "u_radar_radius_km");
         this.u_noise_seed = gl.getUniformLocation(this.program, "u_noise_seed"); // [新增]
-        this.u_is_monsoon_depression = gl.getUniformLocation(
-       this.program, "u_is_monsoon_depression");
+        this.u_is_monsoon_depression = gl.getUniformLocation(this.program, "u_is_monsoon_depression");
 
         this.u_sys_params = this.gl.getUniformLocation(this.program, "u_sys_params");
         this.u_sys_strength = this.gl.getUniformLocation(this.program, "u_sys_strength");
@@ -900,7 +899,7 @@ export class RadarRenderer {
         gl.clearColor(0.0, 0.0, 0.0, 0.0); // 设置清除颜色为透明黑色
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.uniform1i(this.u_is_monsoon_depression, 
-                cyclone.isMonsoonDepression ? 1 : 0);
+        state.cyclone.isMonsoonDepression ? 1 : 0);
         // [修改] 如果模拟已结束（气旋消散），则直接清空画面，不再渲染环境雷暴
         if (state.cyclone && state.cyclone.status === 'dissipated') {
             return;

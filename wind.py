@@ -103,7 +103,24 @@ def get_value_from_b64(b64_str):
     return res
 
 # --- 2. 爬虫抓取逻辑 ---
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+# 1. 设置 Chrome 配置项
+options = webdriver.ChromeOptions()
+
+# --- 核心：GitHub Actions 必须参数 ---
+options.add_argument('--headless')           # 开启无头模式（没有界面）
+options.add_argument('--no-sandbox')          # 解决 Linux 沙盒权限问题
+options.add_argument('--disable-dev-shm-usage') # 防止内存溢出（Linux 容器环境常用）
+options.add_argument('--window-size=1920,1080') # 设置虚拟窗口大小，确保元素能被定位
+
+# --- 建议：提升稳定性参数 ---
+options.add_argument('--disable-gpu')         # 禁用 GPU 硬件加速
+options.add_argument('--blink-settings=imagesEnabled=true') # 确保图片加载，否则抓不到 Base64
+
+# 2. 启动驱动
+# 使用 ChromeDriverManager 自动管理版本，配合上面设置的 options
+service = Service(ChromeDriverManager().install())
+driver = webdriver.Chrome(service=service, options=options)
+
 realtime_data = {} # 格式: {"代表街道名": 风速}
 
 try:

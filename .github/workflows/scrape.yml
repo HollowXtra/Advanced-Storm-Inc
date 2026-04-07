@@ -7,7 +7,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # --- 关键修改：锁定为 22.04 版本 ---
+    runs-on: ubuntu-22.04 
     permissions:
       contents: write
 
@@ -23,7 +24,7 @@ jobs:
     - name: Install Linux System Dependencies
       run: |
         sudo apt-get update
-        # 补齐 ddddocr 和 OpenCV 运行所需的全部核心库
+        # 22.04 下的标准依赖包名
         sudo apt-get install -y \
           libsm6 libxext6 libxrender-dev \
           libgl1-mesa-glx libgomp1 libglib2.0-0 \
@@ -38,7 +39,6 @@ jobs:
 
     - name: Run Scraper
       run: |
-        # 确认文件名为 wind.py 且在仓库根目录
         python wind.py 
 
     - name: Commit and Push
@@ -46,7 +46,6 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         git add .
-        # 只有在有变化时才 commit
         if [ -n "$(git status --porcelain)" ]; then
           git commit -m "Auto-update weather data: $(date)"
           git push

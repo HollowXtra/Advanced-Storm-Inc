@@ -13,13 +13,13 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import ddddocr
 
-# 环境变量设置，减少内存压力
+# 设置环境变量，减少内存占用，防止 GitHub Actions 崩掉
 os.environ['ONNXRUNTIME_EXECUTION_MODE'] = 'SEQUENTIAL'
 
 # --- 1. 配置与初始化 ---
+ocr = ddddocr.DdddOcr(show_ad=False)
 MAPPING_FILE = "weather_mapping.json"
 OUTPUT_CSV = "sz_wind_data_updated.csv"
-realtime_data = {} # 必须在最外层初始化
 
 # 固定的 54 个站点基础信息
 BASE_STATIONS = [
@@ -57,7 +57,7 @@ BASE_STATIONS = [
     ["清林径", 0, 0, 114.238, 22.765, "G3564", "龙岗"],
     ["翠竹", 0, 0, 114.133, 22.558, "G3577", "翠竹"],
     ["莲塘", 0, 0, 114.171, 22.561, "G1173", "莲塘"],
-    ["大康", 0, 0, 114.233, 22.646, "G3554", "圆山"],
+    ["大康", 0, 0, 114.233, 22.646, "G3554", "园山"],
     ["大冲", 0, 0, 113.947, 22.551, "G3720", "粤海"],
     ["坑梓", 0, 0, 114.366, 22.746, "G3537", "坑梓"],
     ["燕山", 0, 0, 113.849, 22.81, "G3785", "燕罗"],
@@ -79,9 +79,6 @@ BASE_STATIONS = [
     ["沙湖", 0, 0, 114.3, 22.669, "G3753", "碧岭"]
 ]
 
-# 初始化 OCR
-ocr = ddddocr.DdddOcr(show_ad=False)
-
 if os.path.exists(MAPPING_FILE):
     with open(MAPPING_FILE, "r", encoding="utf-8") as f:
         value_mapping = json.load(f)
@@ -102,96 +99,74 @@ def get_value_from_b64(b64_str):
     img.save(buf, format="PNG")
     res = ocr.classification(buf.getvalue())
     
-    # 智能补全小数点
     if res.isdigit() and len(res) >= 2:
         res = res[:-1] + "." + res[-1]
     
     value_mapping[raw_b64] = res
     return res
 
-# --- 2. 浏览器启动逻辑 ---
+# --- 2. 爬虫抓取逻辑 ---
+# ✨ 核心变动：添加 GitHub Actions 所需的 Chrome 参数 ✨
 options = webdriver.ChromeOptions()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
 options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--disable-gpu')
 options.add_argument('--window-size=1920,1080')
-options.page_load_strategy = 'eager' # 核心：HTML下载完即开始，不等待图片
 
-service = Service(ChromeDriverManager().install())
-driver = webdriver.Chrome(service=service, options=options)
-driver.set_page_load_timeout(45)
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+realtime_data = {} 
 
 try:
-    print("正在尝试访问页面...")
-    # 增加重试逻辑
-    success = False
-    for i in range(3):
-        try:
-            driver.get("https://weather.sz.gov.cn/qixiangfuwu/qixiangjiance/zidongzhanchaxun/index.html")
-            success = True
-            break
-        except Exception:
-            print(f"页面加载超时，正在进行第 {i+1} 次重试...")
-            time.sleep(2)
-    
-    if not success:
-        raise Exception("无法加载目标页面")
-
+    print("正在加载网页...")
+    driver.get("https://weather.sz.gov.cn/qixiangfuwu/qixiangjiance/zidongzhanchaxun/index.html")
     wait = WebDriverWait(driver, 20)
 
-    # 步骤 1: 切换到风速风向
+    # 切换 Tab 到 日最大瞬时
     wind_main = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'风速风向')]")))
     driver.execute_script("arguments[0].click();", wind_main)
-    time.sleep(2)
-
-    # 步骤 2: 切换到日最大瞬时 (精准ID)
+    time.sleep(3)
     sub_tab = wait.until(EC.presence_of_element_located((By.ID, "mdngv_Wind_DmaxS")))
     driver.execute_script("arguments[0].click();", sub_tab)
-    time.sleep(8) # 切换后等待表格刷新
+    time.sleep(6)
 
-    # 步骤 3: 抓取表格数据
     rows = driver.find_elements(By.CSS_SELECTOR, "#obtlist tr.obtitem")
     for row in rows:
         try:
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) >= 3:
-                # 强化版文字提取 (处理懒加载空值)
                 name = cells[1].get_attribute('innerText').strip()
-                attempts = 0
-                while not name and attempts < 10:
-                    time.sleep(0.3)
-                    name = cells[1].get_attribute('innerText').strip()
-                    attempts += 1
-                
+                # 修正街道名称，匹配基础信息里的“代表街道”（去掉“街道”两字）
                 clean_name = name.replace("街道", "")
-                img_src = cells[2].find_element(By.TAG_NAME, "img").get_attribute("src")
-                val_ms = get_value_from_b64(img_src)
+                
+                src = cells[2].find_element(By.TAG_NAME, "img").get_attribute("src")
+                val_ms = get_value_from_b64(src)
                 
                 try:
                     realtime_data[clean_name] = float(val_ms)
                 except:
                     realtime_data[clean_name] = 0.0
-        except Exception as e:
-            continue
+        except: continue
 
-    # --- 3. 自动更新并保存 CSV ---
+    # --- 3. CSV 自动更新逻辑 ---
     with open(OUTPUT_CSV, mode='w', encoding='utf-8-sig', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["自动站点", "日最大瞬时风力（m/s）", "kph", "经度", "纬度", "自动站号", "代表街道"])
         
         for station in BASE_STATIONS:
-            site_name, _, _, lon, lat, sn, street = station
+            site_name, ms, kph, lon, lat, sn, street = station
+            
+            # 从抓取到的数据中匹配风速
             current_ms = realtime_data.get(street, 0.0)
             current_kph = round(current_ms * 3.6, 1)
+            
+            # 写入 CSV
             writer.writerow([site_name, current_ms, current_kph, lon, lat, sn, street])
 
-    # 同步保存指纹库
     with open(MAPPING_FILE, "w", encoding="utf-8") as f:
         json.dump(value_mapping, f, ensure_ascii=False, indent=4)
         
-    print(f"✨ 任务成功！CSV 已经更新。")
+    print(f"\n✨ CSV 文件已成功更新至: {OUTPUT_CSV}")
 
 finally:
     driver.quit()

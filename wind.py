@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import ddddocr
 
-# 设置环境变量，减少内存占用，防止 GitHub Actions 崩掉
+# 强制环境变量，防止 OCR 在云端内存溢出
 os.environ['ONNXRUNTIME_EXECUTION_MODE'] = 'SEQUENTIAL'
 
 # --- 1. 配置与初始化 ---
@@ -21,7 +21,7 @@ ocr = ddddocr.DdddOcr(show_ad=False)
 MAPPING_FILE = "weather_mapping.json"
 OUTPUT_CSV = "sz_wind_data_updated.csv"
 
-# 固定的 54 个站点基础信息
+# 固定的 54 个站点基础信息 (保持你原本的数据)
 BASE_STATIONS = [
     ["田头", 0, 0, 114.408, 22.689, "G3731", "石井"],
     ["梧桐村", 0, 0, 114.188, 22.594, "G1174", "东湖"],
@@ -106,51 +106,67 @@ def get_value_from_b64(b64_str):
     return res
 
 # --- 2. 爬虫抓取逻辑 ---
-# ✨ 核心变动：添加 GitHub Actions 所需的 Chrome 参数 ✨
+# ✨ 核心适配：GitHub Actions 专用启动参数 ✨
 options = webdriver.ChromeOptions()
-options.add_argument('--headless')
-options.add_argument('--no-sandbox')
-options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--window-size=1920,1080')
+options.add_argument('--headless')           # 无头模式，必选
+options.add_argument('--no-sandbox')          # 禁用沙盒，必选
+options.add_argument('--disable-dev-shm-usage') # 禁用 /dev/shm，防止 120s 超时的神药
+options.add_argument('--window-size=1920,1080') # 窗口大小，防止滚动定位失效
+options.add_argument('--disable-gpu')         # 禁用 GPU 加速
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-realtime_data = {} 
+realtime_data = {} # 格式: {"代表街道名": 风速}
 
 try:
-    print("正在加载网页...")
+    print("正在访问气象局页面...")
     driver.get("https://weather.sz.gov.cn/qixiangfuwu/qixiangjiance/zidongzhanchaxun/index.html")
-    wait = WebDriverWait(driver, 20)
+    wait = WebDriverWait(driver, 25)
 
-    # 切换 Tab 到 日最大瞬时
+    # 切换 Tab 到 风速风向
     wind_main = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'风速风向')]")))
     driver.execute_script("arguments[0].click();", wind_main)
     time.sleep(3)
+    
+    # 切换子 Tab 到 日最大瞬时
     sub_tab = wait.until(EC.presence_of_element_located((By.ID, "mdngv_Wind_DmaxS")))
     driver.execute_script("arguments[0].click();", sub_tab)
-    time.sleep(6)
+    print("已切换至日最大瞬时，等待数据渲染...")
+    time.sleep(8) # 增加等待时间，确保表格内容完全刷新
 
     rows = driver.find_elements(By.CSS_SELECTOR, "#obtlist tr.obtitem")
     for row in rows:
         try:
+            # 滚动到该行，触发懒加载渲染文本
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) >= 3:
+                # 使用 innerText 提取，更稳健
                 name = cells[1].get_attribute('innerText').strip()
-                # 修正街道名称，匹配基础信息里的“代表街道”（去掉“街道”两字）
+                
+                # 如果名字为空，稍微等等（针对 Actions 延迟）
+                if not name:
+                    time.sleep(0.5)
+                    name = cells[1].get_attribute('innerText').strip()
+
                 clean_name = name.replace("街道", "")
                 
-                src = cells[2].find_element(By.TAG_NAME, "img").get_attribute("src")
+                # 获取图片 Base64
+                img_tag = cells[2].find_element(By.TAG_NAME, "img")
+                src = img_tag.get_attribute("src")
                 val_ms = get_value_from_b64(src)
                 
                 try:
                     realtime_data[clean_name] = float(val_ms)
                 except:
                     realtime_data[clean_name] = 0.0
-        except: continue
+        except: 
+            continue
 
-    # --- 3. CSV 自动更新逻辑 ---
+    # --- 3. CSV 自动更新逻辑 (100% 还原你的好脚本逻辑) ---
+    print(f"开始更新 CSV，当前匹配到 {len(realtime_data)} 个街道数据")
     with open(OUTPUT_CSV, mode='w', encoding='utf-8-sig', newline='') as f:
         writer = csv.writer(f)
+        # 写入表头
         writer.writerow(["自动站点", "日最大瞬时风力（m/s）", "kph", "经度", "纬度", "自动站号", "代表街道"])
         
         for station in BASE_STATIONS:
@@ -163,10 +179,11 @@ try:
             # 写入 CSV
             writer.writerow([site_name, current_ms, current_kph, lon, lat, sn, street])
 
+    # 同步更新指纹字典
     with open(MAPPING_FILE, "w", encoding="utf-8") as f:
         json.dump(value_mapping, f, ensure_ascii=False, indent=4)
         
-    print(f"\n✨ CSV 文件已成功更新至: {OUTPUT_CSV}")
+    print(f"\n✨ 任务完成！数据已同步至: {OUTPUT_CSV}")
 
 finally:
     driver.quit()

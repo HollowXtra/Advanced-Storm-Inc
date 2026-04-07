@@ -13,15 +13,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import ddddocr
 
-# 强制环境变量，防止 OCR 在云端内存溢出
-os.environ['ONNXRUNTIME_EXECUTION_MODE'] = 'SEQUENTIAL'
-
 # --- 1. 配置与初始化 ---
 ocr = ddddocr.DdddOcr(show_ad=False)
 MAPPING_FILE = "weather_mapping.json"
 OUTPUT_CSV = "sz_wind_data_updated.csv"
 
-# 固定的 54 个站点基础信息 (保持你原本的数据)
+# 固定的 54 个站点基础信息 (保持你原始的列表)
 BASE_STATIONS = [
     ["田头", 0, 0, 114.408, 22.689, "G3731", "石井"],
     ["梧桐村", 0, 0, 114.188, 22.594, "G1174", "东湖"],
@@ -106,51 +103,53 @@ def get_value_from_b64(b64_str):
     return res
 
 # --- 2. 爬虫抓取逻辑 ---
-# ✨ 核心适配：GitHub Actions 专用启动参数 ✨
+# ✨ 仅在此处添加云端运行必需的配置 ✨
 options = webdriver.ChromeOptions()
-options.add_argument('--headless')           # 无头模式，必选
-options.add_argument('--no-sandbox')          # 禁用沙盒，必选
-options.add_argument('--disable-dev-shm-usage') # 禁用 /dev/shm，防止 120s 超时的神药
-options.add_argument('--window-size=1920,1080') # 窗口大小，防止滚动定位失效
-options.add_argument('--disable-gpu')         # 禁用 GPU 加速
+options.add_argument('--headless')
+options.add_argument('--no-sandbox')
+options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--window-size=1920,1080')
 
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-realtime_data = {} # 格式: {"代表街道名": 风速}
+# 设置超时，防止无限卡死
+driver.set_page_load_timeout(60)
+
+realtime_data = {} 
 
 try:
-    print("正在访问气象局页面...")
+    print("正在尝试访问页面...")
     driver.get("https://weather.sz.gov.cn/qixiangfuwu/qixiangjiance/zidongzhanchaxun/index.html")
-    wait = WebDriverWait(driver, 25)
+    wait = WebDriverWait(driver, 30)
 
-    # 切换 Tab 到 风速风向
+    # 步骤 1: 点击“风速风向”
     wind_main = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(),'风速风向')]")))
     driver.execute_script("arguments[0].click();", wind_main)
     time.sleep(3)
-    
-    # 切换子 Tab 到 日最大瞬时
+
+    # 步骤 2: 点击“日最大瞬时”
     sub_tab = wait.until(EC.presence_of_element_located((By.ID, "mdngv_Wind_DmaxS")))
     driver.execute_script("arguments[0].click();", sub_tab)
-    print("已切换至日最大瞬时，等待数据渲染...")
-    time.sleep(8) # 增加等待时间，确保表格内容完全刷新
+    
+    # 关键等待：给 10 秒，确保表格里的图片和数据完全刷新出来
+    print("正在等待数据渲染...")
+    time.sleep(10)
 
+    # 步骤 3: 提取数据
     rows = driver.find_elements(By.CSS_SELECTOR, "#obtlist tr.obtitem")
     for row in rows:
         try:
-            # 滚动到该行，触发懒加载渲染文本
+            # 滚动到当前行，防止懒加载不显示文字
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", row)
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) >= 3:
-                # 使用 innerText 提取，更稳健
+                # 尝试获取街道名，如果为空则稍等重试
                 name = cells[1].get_attribute('innerText').strip()
-                
-                # 如果名字为空，稍微等等（针对 Actions 延迟）
                 if not name:
                     time.sleep(0.5)
                     name = cells[1].get_attribute('innerText').strip()
-
+                
                 clean_name = name.replace("街道", "")
                 
-                # 获取图片 Base64
                 img_tag = cells[2].find_element(By.TAG_NAME, "img")
                 src = img_tag.get_attribute("src")
                 val_ms = get_value_from_b64(src)
@@ -162,28 +161,24 @@ try:
         except: 
             continue
 
-    # --- 3. CSV 自动更新逻辑 (100% 还原你的好脚本逻辑) ---
-    print(f"开始更新 CSV，当前匹配到 {len(realtime_data)} 个街道数据")
+    # --- 3. CSV 自动更新逻辑 ---
+    print(f"抓取完成，正在更新 CSV (共抓取到 {len(realtime_data)} 条数据)...")
     with open(OUTPUT_CSV, mode='w', encoding='utf-8-sig', newline='') as f:
         writer = csv.writer(f)
-        # 写入表头
         writer.writerow(["自动站点", "日最大瞬时风力（m/s）", "kph", "经度", "纬度", "自动站号", "代表街道"])
         
         for station in BASE_STATIONS:
             site_name, ms, kph, lon, lat, sn, street = station
-            
-            # 从抓取到的数据中匹配风速
+            # 严格匹配字典里的键值
             current_ms = realtime_data.get(street, 0.0)
             current_kph = round(current_ms * 3.6, 1)
-            
-            # 写入 CSV
             writer.writerow([site_name, current_ms, current_kph, lon, lat, sn, street])
 
-    # 同步更新指纹字典
+    # 保存映射表
     with open(MAPPING_FILE, "w", encoding="utf-8") as f:
         json.dump(value_mapping, f, ensure_ascii=False, indent=4)
         
-    print(f"\n✨ 任务完成！数据已同步至: {OUTPUT_CSV}")
+    print(f"✨ 任务完成！")
 
 finally:
     driver.quit()

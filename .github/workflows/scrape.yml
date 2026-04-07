@@ -2,12 +2,12 @@ name: SZ Weather Auto Scraper
 
 on:
   schedule:
+    # 保持每 15 分钟一次的设定
     - cron: '*/15 * * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 保持手动触发功能
 
 jobs:
   build:
-    # --- 关键修改：锁定为 22.04 版本 ---
     runs-on: ubuntu-22.04 
     permissions:
       contents: write
@@ -20,35 +20,35 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
+        # ✨ 开启 Pip 缓存，大幅提升二次运行速度
+        cache: 'pip'
 
-    - name: Install Linux System Dependencies
+    - name: Install Essential Linux Dependencies
+      # 仅保留 ddddocr 和 OpenCV 必须的系统库，缩短安装时间
       run: |
         sudo apt-get update
-        # 22.04 下的标准依赖包名
-        sudo apt-get install -y \
-          libsm6 libxext6 libxrender-dev \
-          libgl1-mesa-glx libgomp1 libglib2.0-0 \
-          libnss3 libatk1.0-0 libatk-bridge2.0-0 \
-          libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
-          libxdamage1 libxrandr2 libgbm1
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0
 
     - name: Install Python Packages
+      # 配合上面的 cache 选项，这里会自动跳过已缓存的包
       run: |
         python -m pip install --upgrade pip
         pip install selenium webdriver-manager ddddocr Pillow requests
 
     - name: Run Scraper
+      # 运行你的风力抓取脚本
       run: |
         python wind.py 
 
     - name: Commit and Push
+      # 只有在 CSV 文件有变动时才会执行提交，避免产生空的提交记录
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         git add .
         if [ -n "$(git status --porcelain)" ]; then
-          git commit -m "Auto-update weather data: $(date)"
+          git commit -m "Auto-update weather data: $(date +'%Y-%m-%d %H:%M:%S')"
           git push
         else
-          echo "No changes to commit"
+          echo "No changes in data, skipping push."
         fi

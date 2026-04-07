@@ -114,6 +114,7 @@ def get_value_from_b64(b64_str):
     return res
 
 # --- 2. 爬虫抓取逻辑 ---
+realtime_data = {}
 # --- 1. 强化版 Chrome 配置 ---
 options = webdriver.ChromeOptions()
 options.add_argument('--headless')

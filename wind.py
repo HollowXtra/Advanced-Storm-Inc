@@ -21,6 +21,16 @@ ocr = ddddocr.DdddOcr(show_ad=False)
 MAPPING_FILE = "weather_mapping.json"
 OUTPUT_CSV = "sz_wind_data_updated.csv"
 
+if os.path.exists(MAPPING_FILE) and os.path.getsize(MAPPING_FILE) > 0:
+    try:
+        with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+            value_mapping = json.load(f)
+    except json.JSONDecodeError:
+        print(f"警告: {MAPPING_FILE} 格式损坏，已重置。")
+        value_mapping = {}
+else:
+    value_mapping = {}
+
 # 你的 54 个站点列表保持不变
 BASE_STATIONS = [
     ["田头", 0, 0, 114.408, 22.689, "G3731", "石井"], ["梧桐村", 0, 0, 114.188, 22.594, "G1174", "东湖"],

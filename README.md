@@ -1,4 +1,4 @@
-## This is dumpster, including a Tropical Cyclone Simulator, an AI-IR Tropical Cyclone Intensity Identifier, and a wind grabber.
+## This is a dumpster, including a Tropical Cyclone Simulator, an AI-IR Tropical Cyclone Intensity Identifier, and a wind grabber.
 A vibe project using frontier LLMs, NOT CAREFULLY REVIEWED, so there might be unexpected bugs.
 ## Guide
 Go to **https://enceladuscat.github.io** to run the html.

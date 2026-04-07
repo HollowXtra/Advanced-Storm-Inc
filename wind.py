@@ -15,13 +15,19 @@ import ddddocr
 import os
 os.environ['ONNXRUNTIME_EXECUTION_MODE'] = 'SEQUENTIAL' # 强制顺序执行，减少内存占用
 
-# --- 修改 OCR 初始化 ---
-# 增加一个全局变量判断，确保只初始化一次
-try:
-    ocr = ddddocr.DdddOcr(show_ad=False, beta=True) # 开启 beta 模式有时更稳
-except Exception as e:
-    print(f"OCR 初始化警告: {e}，尝试普通模式")
-    ocr = ddddocr.DdddOcr(show_ad=False)
+# --- 1. 配置与初始化 ---
+MAPPING_FILE = "weather_mapping.json"  # 确保这一行在最前面，且没有被删掉
+OUTPUT_CSV = "sz_wind_data_updated.csv"
+
+# 初始化 OCR
+ocr = ddddocr.DdddOcr(show_ad=False)
+
+# 确保在读取映射表时使用了正确的变量名
+if os.path.exists(MAPPING_FILE):
+    with open(MAPPING_FILE, "r", encoding="utf-8") as f:
+        value_mapping = json.load(f)
+else:
+    value_mapping = {}
 
 # 固定的 54 个站点基础信息 (根据你提供的数据)
 BASE_STATIONS = [

@@ -114,27 +114,31 @@ def get_value_from_b64(b64_str):
     return res
 
 # --- 2. 爬虫抓取逻辑 ---
-# 1. 设置 Chrome 配置项
+# --- 1. 强化版 Chrome 配置 ---
 options = webdriver.ChromeOptions()
+options.add_argument('--headless')
+options.add_argument('--no-sandbox')
+options.add_argument('--disable-dev-shm-usage') # 核心：解决内存溢出导致的 Read Timeout
+options.add_argument('--disable-gpu')
+options.add_argument('--window-size=1920,1080')
+options.add_argument('--blink-settings=imagesEnabled=true')
 
-# --- 核心：GitHub Actions 必须参数 ---
-options.add_argument('--headless')           # 开启无头模式（没有界面）
-options.add_argument('--no-sandbox')          # 解决 Linux 沙盒权限问题
-options.add_argument('--disable-dev-shm-usage') # 防止内存溢出（Linux 容器环境常用）
-options.add_argument('--window-size=1920,1080') # 设置虚拟窗口大小，确保元素能被定位
+# 针对 GitHub Actions 的额外优化
+options.add_argument('--disk-cache-dir=/tmp/selenium-cache') 
+options.add_experimental_option("excludeSwitches", ["enable-automation"])
+options.add_experimental_option('useAutomationExtension', False)
 
-# --- 建议：提升稳定性参数 ---
-options.add_argument('--disable-gpu')         # 禁用 GPU 硬件加速
-options.add_argument('--blink-settings=imagesEnabled=true') # 确保图片加载，否则抓不到 Base64
-
-# 2. 启动驱动
-# 使用 ChromeDriverManager 自动管理版本，配合上面设置的 options
+# --- 2. 增加启动超时设置 ---
 service = Service(ChromeDriverManager().install())
 driver = webdriver.Chrome(service=service, options=options)
 
-realtime_data = {} # 格式: {"代表街道名": 风速}
+# 设置页面加载超时为 60 秒，防止死等 120 秒
+driver.set_page_load_timeout(60) 
+# 设置脚本执行超时
+driver.set_script_timeout(60)
 
 try:
+    print("正在尝试访问页面...")
     driver.get("https://weather.sz.gov.cn/qixiangfuwu/qixiangjiance/zidongzhanchaxun/index.html")
     wait = WebDriverWait(driver, 20)
 

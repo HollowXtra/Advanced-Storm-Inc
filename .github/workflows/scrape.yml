@@ -2,7 +2,7 @@ name: SZ Weather Auto Scraper
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '10,30,50 * * * *'
   workflow_dispatch:
 
 jobs:

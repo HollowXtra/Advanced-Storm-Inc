@@ -8,38 +8,37 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 必须给予写入权限，否则生成的 CSV 无法 push 回仓库
     permissions:
       contents: write
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4 # 升级到 v4 解决 deprecation 警告
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5 # 升级到 v5
       with:
         python-version: '3.10'
 
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsm6 libxext6 libxrender-dev libgl1-mesa-glx
+        sudo apt-get install -y libsm6 libxext6 libxrender-dev libgl1-mesa-glx libgomp1
 
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
+        # 直接在这里列出依赖，确保环境干净
         pip install selenium webdriver-manager ddddocr Pillow requests
 
     - name: Run Scraper
       run: |
-        python wind.py
+        python wind.py 
 
     - name: Commit and Push if changed
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        git add sz_wind_data_updated.csv weather_mapping.json
-        # 如果没有文件变化，git commit 会报错，用 || exit 0 跳过
-        git commit -m "Auto-update weather data: $(date)" || exit 0
-        git push
+        git add .
+        # 只有在有变化时才 commit
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update weather data: $(date)" && git push)

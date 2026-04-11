@@ -38,7 +38,7 @@ jobs:
       # 配合上面的 cache 选项，这里会自动跳过已缓存的包
       run: |
         python -m pip install --upgrade pip
-        pip install selenium webdriver-manager ddddocr Pillow requests代码
+        pip install selenium webdriver-manager ddddocr Pillow requests
 
     - name: Run Scraper
     # 此时运行 wind.py，其内部获取的时间即为北京时间
@@ -51,7 +51,6 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         git add .
-        # 这里的 $(date) 也会显示为北京时间
         if [ -n "$(git status --porcelain)" ]; then
           git commit -m "Auto-update weather data: $(date +'%Y-%m-%d %H:%M:%S')"
           git push

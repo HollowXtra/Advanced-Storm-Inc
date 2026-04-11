@@ -2,7 +2,9 @@ name: SZ Weather Auto Scraper
 
 on:
   schedule:
-    - cron: '10,30,50 * * * *'
+    # 这里的 cron 时间是 UTC 时间
+    # UTC 10,30,50 分 对应 北京时间 10,30,50 分 (小时数+8)
+    - cron: '10,40 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,6 +12,11 @@ jobs:
     runs-on: ubuntu-22.04 
     permissions:
       contents: write
+    
+    # ++++++ 添加以下行来设置全局时区为北京时间 ++++++
+    env:
+      TZ: Asia/Shanghai
+    # -----------------------------------------------
 
     steps:
     - name: Checkout code
@@ -31,10 +38,10 @@ jobs:
       # 配合上面的 cache 选项，这里会自动跳过已缓存的包
       run: |
         python -m pip install --upgrade pip
-        pip install selenium webdriver-manager ddddocr Pillow requests
+        pip install selenium webdriver-manager ddddocr Pillow requests代码
 
     - name: Run Scraper
-      # 运行你的风力抓取脚本
+    # 此时运行 wind.py，其内部获取的时间即为北京时间
       run: |
         python wind.py 
 
@@ -44,6 +51,7 @@ jobs:
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
         git add .
+        # 这里的 $(date) 也会显示为北京时间
         if [ -n "$(git status --porcelain)" ]; then
           git commit -m "Auto-update weather data: $(date +'%Y-%m-%d %H:%M:%S')"
           git push

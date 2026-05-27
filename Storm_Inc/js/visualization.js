@@ -8,6 +8,11 @@ import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
 
+function getSimulationYear(cyclone) {
+    const parsed = parseInt(cyclone?.currentYear, 10);
+    return Number.isFinite(parsed) ? parsed : new Date().getFullYear();
+}
+
 function scoreCityLabel(city, cyclone = null) {
     const popScore = Math.log10(Math.max(1, city.p || 1));
     const roleScore = (city.cap ? 1.25 : 0) + (city.wc ? 0.8 : 0);
@@ -2701,7 +2706,7 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
 
             // [新增] 现场计算并规整时间 (Round to nearest 6H)
             // 1. 重建时间基准 (假设模拟从当月1号 00:00Z 开始)
-            const year = new Date().getFullYear();
+            const year = getSimulationYear(cyclone);
             const month = (cyclone.currentMonth || 8) - 1; 
             const calcDate = new Date(Date.UTC(year, month, 1));
             
@@ -2734,7 +2739,7 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
 
     // --- 辅助函数：日期格式化 ---
     function calculateDateStr(currentAge, forecastHour, cyclone) {
-        const year = new Date().getFullYear();
+        const year = getSimulationYear(cyclone);
         const month = (cyclone.currentMonth || 7) - 1; 
         const startDay = 1;
         
@@ -3523,7 +3528,7 @@ export function renderProbabilitiesStyle(cyclone, timeIndex, worldData, threshol
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     
-    const year = new Date().getFullYear();
+    const year = getSimulationYear(cyclone);
     const month = (cyclone.currentMonth || 8) - 1; 
     const startDate = new Date(Date.UTC(year, month, 1));
     startDate.setUTCHours(startDate.getUTCHours() + currentAge);
@@ -4280,7 +4285,7 @@ export function startNewsAnimation(canvas, worldData, cyclone, pathForecasts, ba
     const cycloneNumStr = String(simulationCount).padStart(2, '0');
     const displayName = cyclone.name ? cyclone.name.toUpperCase() : `${basinCode} ${cycloneNumStr}`;
     const rotationDir = cyclone.lat < 0 ? 1 : -1; 
-    const year = new Date().getFullYear();
+    const year = getSimulationYear(cyclone);
     const monthIdx = (cyclone.currentMonth || 8) - 1; 
     const startDay = 1;
     let animationId = null;
@@ -4770,7 +4775,7 @@ export function renderStationSynopticChart(cyclone, timeIndex, worldData, pressu
     ctx.fillText("LOCAL SYNOPTIC ANALYSIS (MSLP)", 20, 30);
 
     // 时间戳
-    const year = new Date().getFullYear();
+    const year = getSimulationYear(cyclone);
     const monthIndex = (cyclone.currentMonth || 8) - 1; 
     const currentAge = timeIndex * 3;
     const simDate = new Date(Date.UTC(year, monthIndex, 1));

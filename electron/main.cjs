@@ -104,6 +104,7 @@ function createMainWindow() {
           const startedAt = Date.now();
           const runSimulationSmoke = ${JSON.stringify(isSimulationSmokeTest)};
           const smokeBasin = ${JSON.stringify(process.env.STORM_INC_SMOKE_BASIN || '')};
+          const smokeYear = ${JSON.stringify(process.env.STORM_INC_SMOKE_YEAR || '')};
           const smokeErrors = [];
           window.addEventListener('error', (event) => smokeErrors.push(event.message || String(event.error || event)));
           window.addEventListener('unhandledrejection', (event) => smokeErrors.push(String(event.reason || event)));
@@ -122,6 +123,10 @@ function createMainWindow() {
                 const selector = document.getElementById('basinSelector');
                 if (selector) selector.value = smokeBasin;
               }
+              if (smokeYear) {
+                const selector = document.getElementById('yearSelector');
+                if (selector) selector.value = smokeYear;
+              }
               clickedStart = true;
               generateButton.click();
             }
@@ -133,6 +138,7 @@ function createMainWindow() {
               && !!document.getElementById('deathCounter')
               && !!document.getElementById('rainRateCounter')
               && !!document.getElementById('investIdCounter')
+              && !!document.getElementById('yearSelector')
               && !!document.querySelector('#basinSelector option[value="MED"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
@@ -153,6 +159,8 @@ function createMainWindow() {
               hasDeathCounter: !!document.getElementById('deathCounter'),
               hasRainCounter: !!document.getElementById('rainRateCounter'),
               hasInvestPanel: !!document.getElementById('investIdCounter') && !!document.getElementById('investChance7Counter'),
+              hasYearSelector: !!document.getElementById('yearSelector'),
+              selectedYear: document.getElementById('yearSelector')?.value || '',
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               hasOhcCounter: !!document.getElementById('ohcCounter'),

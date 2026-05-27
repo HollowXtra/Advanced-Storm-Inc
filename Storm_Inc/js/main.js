@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const irBwCheckbox = document.getElementById('irBwCheckbox');
     const basinSelector = document.getElementById('basinSelector');
     const monthSelector = document.getElementById('monthSelector');
+    const yearSelector = document.getElementById('yearSelector');
     const leftContent = document.getElementById('left-hud-content');
     let selectedHistoryPointIndex = -1; // 记录当前选中的历史点
     const generateJTWCButton = document.getElementById('generateJTWCButton');
@@ -114,6 +115,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedSiteName = localStorage.getItem('tcs_site_name');
     const savedSiteLon = localStorage.getItem('tcs_site_lon');
     const savedSiteLat = localStorage.getItem('tcs_site_lat');
+    const savedSimYear = localStorage.getItem('tcs_sim_year');
+    const currentCalendarYear = new Date().getFullYear();
+    const SIM_YEAR_MIN = 1851;
+    const SIM_YEAR_MAX = 2200;
     const stats = new Stats();
     const musicTracks = [
         "WPAC - Barotropic.m4a",
@@ -221,6 +226,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     requestAnimationFrame(animate);
 
+    function normalizeSimulationYear(value) {
+        const parsed = parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return currentCalendarYear;
+        return Math.min(SIM_YEAR_MAX, Math.max(SIM_YEAR_MIN, parsed));
+    }
+
+    function getActiveSimulationYear(cyclone = state.cyclone) {
+        return normalizeSimulationYear(cyclone?.currentYear ?? state.currentYear ?? currentCalendarYear);
+    }
+
     let state = {
         simulationInterval: null,
         isPaused: false,
@@ -235,7 +250,8 @@ document.addEventListener('DOMContentLoaded', () => {
         pressureHistory: [],
         frontalZone: {},
         pathForecasts: [],
-        currentMonth: 7,
+        currentMonth: 7,
+        currentYear: normalizeSimulationYear(savedSimYear || currentCalendarYear),
         world: null,
         showPressureField: false,
         showHumidityField: false,
@@ -276,6 +292,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedSiteName) siteNameInput.value = savedSiteName;
     if (savedSiteLon) siteLonInput.value = savedSiteLon;
     if (savedSiteLat) siteLatInput.value = savedSiteLat;
+    if (yearSelector) {
+        yearSelector.min = String(SIM_YEAR_MIN);
+        yearSelector.max = String(SIM_YEAR_MAX);
+        yearSelector.value = String(state.currentYear);
+    }
     generateButton.disabled = true;
     // --- 初始化与设置 ---
 
@@ -589,7 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // C. 计算日期范围 (MM/DD)
-        const currentYear = new Date().getFullYear();
+        const currentYear = getActiveSimulationYear(state.cyclone);
         // 模拟开始日期 (当月1号)
         const startDate = new Date(Date.UTC(currentYear, state.currentMonth - 1, 1));
         
@@ -603,7 +624,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const d = String(date.getUTCDate()).padStart(2, '0');
             return `${m}/${d}`;
         };
-        const dateRangeStr = `${fmtDate(startDate)} ~ ${fmtDate(endDate)}`;
+        const startYear = startDate.getUTCFullYear();
+        const endYear = endDate.getUTCFullYear();
+        const dateRangeStr = startYear === endYear
+            ? `${startYear} ${fmtDate(startDate)} ~ ${fmtDate(endDate)}`
+            : `${startYear} ${fmtDate(startDate)} ~ ${endYear} ${fmtDate(endDate)}`;
 
 
         // 2. 执行截图
@@ -913,14 +938,15 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         }
 
         // 1. 计算时间字符串
-        const currentYear = new Date().getFullYear();
+        const currentYear = getActiveSimulationYear(state.cyclone);
         const startDate = new Date(Date.UTC(currentYear, currentMonth - 1, 1));
         const currentDate = new Date(startDate.getTime() + currentAge * 3600 * 1000);
         
         const m = String(currentDate.getUTCMonth() + 1).padStart(2, '0');
         const d = String(currentDate.getUTCDate()).padStart(2, '0');
         const h = String(currentDate.getUTCHours()).padStart(2, '0');
-        const dateStr = `${m}/${d} ${h}Z`;
+        const y = currentDate.getUTCFullYear();
+        const dateStr = `${y} ${m}/${d} ${h}Z`;
 
         // 2. 设定颜色主题
         let themeColor = '#ea580c'; // 默认橙色 (Typhoon Upgrade)
@@ -1428,7 +1454,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
             const cycloneInfo = {
                 basin: basinId,
                 month: state.currentMonth,
-                year: new Date().getFullYear(),
+                year: state.currentYear,
                 investNumber: state.cyclone.investNumber
             };
             
@@ -1491,6 +1517,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
             pauseButton.disabled = true;
             pauseButton.innerHTML = '<i class="fa-solid fa-pause text-xs"></i>';
             monthSelector.disabled = false;
+            if (yearSelector) yearSelector.disabled = false;
             basinSelector.disabled = false;
             globalTempSlider.disabled = false;
             globalShearSlider.disabled = false;
@@ -1538,7 +1565,8 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
                 const peakIntensityKt = Math.round(peakWind);
                 
                 // 历史列表显示的名称
-                const historyName = `${statusText} (${finalNumberLabel}) - T+${totalHours}h, Peak ${peakIntensityKt}kt`;
+                const seasonStamp = `${state.currentYear}-${String(state.currentMonth).padStart(2, '0')}`;
+                const historyName = `${seasonStamp} ${statusText} (${finalNumberLabel}) - T+${totalHours}h, Peak ${peakIntensityKt}kt`;
                 const cycloneClone = { ...state.cyclone };
                 const satCacheRef = cycloneClone.satelliteCache;
                 delete cycloneClone.satelliteCache;
@@ -1571,6 +1599,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
         refreshInvestOutlook(wasInvest !== !!state.cyclone.isInvest || previousInvestStatus !== state.cyclone.investStatus);
         updateImpactState(state.impactState, state.cyclone);
         state.cyclone.currentMonth = state.currentMonth;
+        state.cyclone.currentYear = state.currentYear;
         if (state.cyclone.status === 'active') {
             // 为了节省内存，我们只存 keyframe (比如对应 track 的每一个点)
             // 假设 updateTimer 触发 track 更新时刻：
@@ -1780,7 +1809,13 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         }
         state.lastBasin = selectedBasin;
         state.currentMonth = parseInt(monthSelector.value, 10);
+        state.currentYear = normalizeSimulationYear(yearSelector?.value || state.currentYear);
+        if (yearSelector) {
+            yearSelector.value = String(state.currentYear);
+            localStorage.setItem('tcs_sim_year', String(state.currentYear));
+        }
         monthSelector.disabled = true;
+        if (yearSelector) yearSelector.disabled = true;
         basinSelector.disabled = true;
         // [修改] 禁用设置滑块
         globalTempSlider.disabled = true;
@@ -1794,6 +1829,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         // [修改] 传递 GlobalTemp 到模型
         state.cyclone = initializeCyclone(state.world, state.currentMonth, selectedBasin, state.GlobalTemp, state.GlobalShear, state.customLon, state.customLat); 
+        state.cyclone.currentYear = state.currentYear;
         assignInvestDesignation(state.cyclone, selectedBasin);
         state.cyclone.track.push([
             state.cyclone.lon,
@@ -2026,7 +2062,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[basinSelector.value] || 'WP';
-        const year = new Date().getFullYear();
+        const year = state.currentYear;
         const month = String(state.currentMonth).padStart(2, '0');
         const firstLine = text.split('\n')[0];
         const cycloneNum = firstLine ? firstLine.split(',')[1].trim() : '01';
@@ -2042,6 +2078,23 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         playClick();
         settingsMenu.classList.toggle('hidden');
     });
+
+    if (yearSelector) {
+        const syncYearFromInput = () => {
+            state.currentYear = normalizeSimulationYear(yearSelector.value || state.currentYear);
+            yearSelector.value = String(state.currentYear);
+            localStorage.setItem('tcs_sim_year', String(state.currentYear));
+            if (state.cyclone) {
+                state.cyclone.currentYear = state.currentYear;
+            }
+            if (!state.simulationInterval) {
+                requestRedraw();
+            }
+        };
+
+        yearSelector.addEventListener('change', syncYearFromInput);
+        yearSelector.addEventListener('blur', syncYearFromInput);
+    }
 
     globalTempSlider.addEventListener('input', (e) => {
         state.GlobalTemp = parseInt(e.target.value, 10);
@@ -2086,6 +2139,9 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             const selectedCyclone = historyItem.cycloneData;
             selectedCyclone.pressureHistory = historyItem.pressureHistory || [];
             selectedCyclone.siteHistory = historyItem.siteHistory || [];
+            state.currentYear = getActiveSimulationYear(selectedCyclone);
+            state.currentMonth = selectedCyclone.currentMonth || state.currentMonth;
+            if (yearSelector) yearSelector.value = String(state.currentYear);
             state.selectedHistoryCyclone = selectedCyclone;
             state.impactState = historyItem.impactState || createImpactState();
             state.warningAdvisory = historyItem.warningAdvisory || { active: [], signature: '', issuedHour: null };
@@ -2592,11 +2648,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                 infoOverlay.className = "absolute top-4 left-4 text-white/80 font-mono text-xs bg-black/50 p-2 rounded pointer-events-none";
             
                 // 格式化时间戳
-                const year = new Date().getFullYear();
+                const year = getActiveSimulationYear(targetCyclone);
                 const month = (targetCyclone.currentMonth || 8) - 1;
                 const d = new Date(Date.UTC(year, month, 1));
                 d.setUTCHours(d.getUTCHours() + bestShot.age);
-                const timeStr = `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCHours()).padStart(2,'0')}Z`;
+                const timeStr = `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}Z`;
             
                 // 查找那一刻的强度 (用于显示)
                 const trackData = targetCyclone.track.find((_, i) => i * 3 === bestShot.age) || targetPoint;
@@ -2786,7 +2842,7 @@ if (isHistoryMode) {
 
             // 5. 渲染 HTML (保持原有样式)
             const siteName = state.siteName || "UNNAMED STATION";
-            const year = new Date().getFullYear();
+            const year = getActiveSimulationYear(targetCyclone);
             const monthIndex = (state.currentMonth || 8) - 1; 
             const simDate = new Date(Date.UTC(year, monthIndex, 1)); // 从当月1号开始
             simDate.setUTCHours(simDate.getUTCHours() + targetHour); // 加上累计小时数
@@ -2900,7 +2956,7 @@ contentArea.innerHTML = `
                 titleLabel.textContent = "FULL OBSERVATION LOG (CHRONOLOGICAL)";
                 
                 // 1. 准备基础日期参数
-                const baseYear = new Date().getFullYear();
+                const baseYear = getActiveSimulationYear(targetCyclone);
                 const baseMonthIndex = (state.currentMonth || 8) - 1; 
 
                 // 2. 遍历历史切片，生成每一行报文

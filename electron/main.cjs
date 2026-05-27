@@ -159,6 +159,7 @@ function createMainWindow() {
               && !!document.getElementById('warning-list')
               && document.querySelectorAll('.city-label').length > 0
               && document.querySelectorAll('.layer-cyclone circle').length > 0
+              && !!document.querySelector('.ocean-fill')
             );
             const savedSlots = (() => {
               try {
@@ -202,6 +203,9 @@ function createMainWindow() {
               hasWarningPanel: !!document.getElementById('warning-list'),
               cityLabelCount: document.querySelectorAll('.city-label').length,
               cycloneIconCount: document.querySelectorAll('.layer-cyclone circle').length,
+              hasOceanFill: !!document.querySelector('.ocean-fill'),
+              oceanFill: document.querySelector('.ocean-fill') ? getComputedStyle(document.querySelector('.ocean-fill')).fill : '',
+              mapBackground: document.getElementById('map-container') ? getComputedStyle(document.getElementById('map-container')).backgroundColor : '',
               smokeErrors
             };
 

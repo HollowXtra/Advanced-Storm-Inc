@@ -1406,6 +1406,16 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // ============================================================
     
     // A. 初始化：如果陆地不存在，则创建 DOM (仅执行一次)
+    staticLayer.selectAll("rect.ocean-fill")
+        .data([null])
+        .join("rect")
+        .attr("class", "ocean-fill")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", width)
+        .attr("height", height)
+        .lower();
+
     if (staticLayer.select(".land").empty()) {
         // 绘制经纬网容器
         staticLayer.append("path")

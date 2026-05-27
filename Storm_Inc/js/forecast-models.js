@@ -19,6 +19,7 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
         return [];
     }
     const forecasts = [];
+    const isMedicane = cyclone.basin === 'MED';
     
     // 模型定义
     const models = [
@@ -109,7 +110,14 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                         // 考虑湿度影响的 MPI
                         mpi = (15 + (sst - 24.7) * 24.7 - (75 - hum)) * (1.08 - 1/tempCyclone.lat); 
                     }
-                    if (sst >= 24.7) {
+                    if (isMedicane) {
+                        const medMonth = cyclone.currentMonth || 8;
+                        const medSeason = (medMonth >= 9 || medMonth <= 2) ? 1 : 0;
+                        mpi = sst >= 17.0 ? Math.max(0, Math.min(86, 25 + (sst - 17.0) * 6.2 + medSeason * 13 + (globalTemp - 289) * 1.5)) : 0;
+                        const ohc = calculateOceanHeatContent(tempCyclone.lat, tempCyclone.lon, cyclone.currentMonth || 8, globalTemp);
+                        const ohcSupport = Math.max(-0.3, Math.min(0.35, (ohc.ohcKjCm2 - 12) / 55));
+                        mpi *= 1 + ohcSupport * 0.12;
+                    } else if (sst >= 24.7) {
                         const ohc = calculateOceanHeatContent(tempCyclone.lat, tempCyclone.lon, cyclone.currentMonth || 8, globalTemp);
                         const ohcSupport = Math.max(-0.45, Math.min(0.55, (ohc.ohcKjCm2 - 50) / 95));
                         mpi *= 1 + ohcSupport * 0.18;
@@ -119,7 +127,9 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                     const physicalShear = Math.hypot(safeShearU, safeShearV) * 2.5;
                     const totalShear = physicalShear * (globalShearSetting / 100.0);
                     const gap = mpi - lastCalculatedIntensity;
-                    const changeRate = gap > 0 ? Math.random()*0.04 + 0.07 - 0.9/lastCalculatedIntensity - (totalShear * 0.005) : 0.11 + (totalShear * 0.003); 
+                    const changeRate = isMedicane
+                        ? (gap > 0 ? Math.random()*0.025 + 0.045 - 0.5/lastCalculatedIntensity - (totalShear * 0.0038) : 0.08 + (totalShear * 0.0024))
+                        : (gap > 0 ? Math.random()*0.04 + 0.07 - 0.9/lastCalculatedIntensity - (totalShear * 0.005) : 0.11 + (totalShear * 0.003));
                     nextIntensity += gap * changeRate;
                     const currentForecastAge = startAge + (t * PATH_STEP_HOURS);
                     

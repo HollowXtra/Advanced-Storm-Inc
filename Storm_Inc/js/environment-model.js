@@ -44,6 +44,9 @@ const WARM_POOLS = [
     { label: 'Caribbean', lon: -75, lat: 16, amp: 34, sx: 18, sy: 8 },
     { label: 'Bay of Bengal', lon: 89, lat: 14, amp: 38, sx: 11, sy: 8 },
     { label: 'Arabian Sea warm layer', lon: 66, lat: 16, amp: 24, sx: 11, sy: 7 },
+    { label: 'Ionian Sea medicane pocket', lon: 18, lat: 36.5, amp: 16, sx: 8, sy: 4 },
+    { label: 'Levantine warm basin', lon: 30, lat: 34, amp: 14, sx: 8, sy: 4 },
+    { label: 'central Mediterranean warm layer', lon: 13, lat: 36.5, amp: 12, sx: 9, sy: 4 },
     { label: 'Coral Sea', lon: 155, lat: -15, amp: 28, sx: 17, sy: 8 },
     { label: 'South Indian warm pool', lon: 75, lat: -13, amp: 32, sx: 24, sy: 9 }
 ];
@@ -61,6 +64,11 @@ function gaussian(lon, lat, centerLon, centerLat, sx, sy) {
     const dx = shortestLongitudeDistance(lon, centerLon);
     const dy = lat - centerLat;
     return Math.exp(-((dx * dx) / (2 * sx * sx) + (dy * dy) / (2 * sy * sy)));
+}
+
+function isMediterraneanPoint(lon, lat) {
+    const x = normalizeLongitude(lon);
+    return x >= -6 && x <= 36 && lat >= 30 && lat <= 46;
 }
 
 export function pointInPAR(lon, lat) {
@@ -88,7 +96,8 @@ export function getPagasaName(index, setIndex = 1) {
 
 export function calculateOceanHeatContent(lat, lon, month = 8, globalTempK = 289) {
     const sst = getSST(lat, lon, month, globalTempK);
-    const warmAnomaly = Math.max(0, sst - 26.0);
+    const isMediterranean = isMediterraneanPoint(lon, lat);
+    const warmAnomaly = Math.max(0, sst - (isMediterranean ? 19.0 : 26.0));
     const absLat = Math.abs(lat);
     const seasonPeak = lat >= 0 ? 8 : 2;
     const season = 0.5 + 0.5 * Math.cos((month - seasonPeak) * Math.PI / 6);
@@ -103,20 +112,24 @@ export function calculateOceanHeatContent(lat, lon, month = 8, globalTempK = 289
         regionalDepthBoost += boost;
     });
 
-    const equatorialBoost = clamp(18 - absLat * 0.55, 0, 18);
-    const subtropicalPenalty = Math.max(0, absLat - 28) * 2.1;
-    const seasonalBoost = season * (lat >= 0 ? 16 : 13);
-    const depth26M = clamp(8 + warmAnomaly * 13.5 + equatorialBoost + regionalDepthBoost + seasonalBoost - subtropicalPenalty, 0, 175);
+    const equatorialBoost = isMediterranean ? 0 : clamp(18 - absLat * 0.55, 0, 18);
+    const subtropicalPenalty = isMediterranean ? Math.max(0, absLat - 42) * 0.7 : Math.max(0, absLat - 28) * 2.1;
+    const medSeasonPeak = 9.5;
+    const medSeason = 0.5 + 0.5 * Math.cos((month - medSeasonPeak) * Math.PI / 6);
+    const seasonalBoost = isMediterranean ? (8 + medSeason * 14) : season * (lat >= 0 ? 16 : 13);
+    const depth26M = isMediterranean
+        ? clamp(7 + warmAnomaly * 5.8 + regionalDepthBoost * 0.55 + seasonalBoost - subtropicalPenalty, 0, 82)
+        : clamp(8 + warmAnomaly * 13.5 + equatorialBoost + regionalDepthBoost + seasonalBoost - subtropicalPenalty, 0, 175);
 
     const rhoCp = 4.09e6;
     const ohc = rhoCp * warmAnomaly * depth26M / 1e7;
-    const roundedOHC = Math.round(clamp(ohc, 0, 180));
+    const roundedOHC = Math.round(clamp(ohc, 0, isMediterranean ? 90 : 180));
 
     return {
         sst,
         depth26M: Math.round(depth26M),
         ohcKjCm2: roundedOHC,
-        supportsIntensification: sst >= 26 && roundedOHC >= 50,
+        supportsIntensification: isMediterranean ? (sst >= 18.5 && roundedOHC >= 12) : (sst >= 26 && roundedOHC >= 50),
         label: regionLabel
     };
 }
@@ -130,14 +143,16 @@ export function calculateCycloneRainfall(cyclone, month = 8, globalTempK = 289, 
     const intensity = Math.max(10, Number(cyclone.intensity || 0));
     const size = clamp(Number(cyclone.circulationSize || 300), 100, 800);
     const speed = clamp(Number(cyclone.speed || 8), 2, 35);
+    const isMedicane = cyclone.basin === 'MED';
 
     const moistureFactor = clamp(humidity / 74, 0.45, 1.45);
     const slowFactor = clamp(10 / speed, 0.65, 2.65);
-    const warmRainFactor = clamp((sst - 24.5) / 6.0, 0.25, 1.35);
-    const ohcFactor = clamp(0.78 + ohc / 125, 0.7, 1.55);
+    const warmRainFactor = isMedicane ? clamp((sst - 17.0) / 8.5, 0.38, 1.18) : clamp((sst - 24.5) / 6.0, 0.25, 1.35);
+    const ohcFactor = isMedicane ? clamp(0.88 + ohc / 90, 0.78, 1.35) : clamp(0.78 + ohc / 125, 0.7, 1.55);
     const shearVentFactor = clamp(1.1 - shearKt / 80, 0.62, 1.12);
     const monsoonFactor = cyclone.isMonsoonDepression ? 1.45 : 1.0;
     const structureFactor = cyclone.ercState && cyclone.ercState !== 'none' ? 1.1 : 1.0;
+    const medicaneRainFactor = isMedicane ? 1.18 : 1.0;
 
     const innerCoreRate = (5 + intensity * 0.16 + Math.sqrt(size) * 0.45)
         * moistureFactor
@@ -146,9 +161,12 @@ export function calculateCycloneRainfall(cyclone, month = 8, globalTempK = 289, 
         * ohcFactor
         * shearVentFactor
         * monsoonFactor
-        * structureFactor;
+        * structureFactor
+        * medicaneRainFactor;
 
-    const rainShieldKm = clamp(160 + size * 1.55 + Math.max(0, humidity - 70) * 7, 180, 1300);
+    const rainShieldKm = isMedicane
+        ? clamp(110 + size * 1.2 + Math.max(0, humidity - 70) * 5.5, 150, 620)
+        : clamp(160 + size * 1.55 + Math.max(0, humidity - 70) * 7, 180, 1300);
 
     return {
         centerRateMmHr: clamp(innerCoreRate, 0, 95),

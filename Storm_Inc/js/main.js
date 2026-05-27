@@ -280,6 +280,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 初始化与设置 ---
 
     function getEnglishCategoryName(knots, isExtra, isSub, basin) {
+        if (basin === 'MED') {
+            if (isExtra) return "POST-TROPICAL MEDICANE";
+            if (isSub) return "SUBTROPICAL MEDICANE";
+            if (knots < 34) return "MEDITERRANEAN LOW";
+            if (knots < 64) return "MEDICANE";
+            return "INTENSE MEDICANE";
+        }
         if (isExtra) return "EXTRATROPICAL CYCLONE";
         if (isSub) return "SUBTROPICAL STORM";
         if (knots < 34) return "TROPICAL DEPRESSION";
@@ -360,6 +367,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getCycloneCategoryLabel(cyclone, category) {
         if (cyclone?.isInvest) return 'Invest Disturbance';
+        if (cyclone?.basin === 'MED') {
+            if (cyclone.isExtratropical) return 'Post-Tropical Medicane';
+            if (cyclone.isSubtropical) return 'Subtropical Medicane';
+            if ((cyclone.intensity || 0) < 34) return 'Mediterranean Low';
+            if ((cyclone.intensity || 0) < 64) return 'Medicane';
+            return 'Intense Medicane';
+        }
         return category?.name || '--';
     }
 
@@ -550,7 +564,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let peakWind = 0;
         let minPressure = 1010;
         const currentBasin = basinSelector.value || 'WPAC';
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basinCode = basinMap[currentBasin] || 'XX';
         
         // 气旋编号 (如果没有 finalStats，使用当前计数)
@@ -764,7 +778,7 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
     }
 
     function formatBestTrack(track, cycloneInfo, simulationCount) {
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[cycloneInfo.basin] || 'WP';
         const cycloneNum = String(simulationCount).padStart(2, '0');
         const investNum = String(cycloneInfo.investNumber || 90).padStart(2, '0');
@@ -1588,6 +1602,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
 
             let stormTerm = "HURRICANE";
             if (currentBasinId === 'WPAC') stormTerm = "TYPHOON";
+            else if (currentBasinId === 'MED') stormTerm = "MEDICANE";
             else if (['NIO', 'SIO', 'SHEM'].includes(currentBasinId)) { stormTerm = "CAT-1 CYCLONE"; }
             
             // 构建 HTML 标题
@@ -1608,6 +1623,8 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
             let statusTerm = "CATEGORY 5 HURRICANE";
             if (currentBasinId === 'WPAC') {
                 statusTerm = "CAT-5 SUPER TYPHOON";
+            } else if (currentBasinId === 'MED') {
+                statusTerm = "RARE MAJOR MEDICANE";
             }
 
             // 构建标题 HTML (紫色高亮风格)
@@ -2007,7 +2024,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             return;
         }
 
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[basinSelector.value] || 'WP';
         const year = new Date().getFullYear();
         const month = String(state.currentMonth).padStart(2, '0');

@@ -103,6 +103,7 @@ function createMainWindow() {
         new Promise((resolve) => {
           const startedAt = Date.now();
           const runSimulationSmoke = ${JSON.stringify(isSimulationSmokeTest)};
+          const smokeBasin = ${JSON.stringify(process.env.STORM_INC_SMOKE_BASIN || '')};
           const smokeErrors = [];
           window.addEventListener('error', (event) => smokeErrors.push(event.message || String(event.error || event)));
           window.addEventListener('unhandledrejection', (event) => smokeErrors.push(String(event.reason || event)));
@@ -117,6 +118,10 @@ function createMainWindow() {
               && !!generateButton;
 
             if (runSimulationSmoke && baseReady && !clickedStart && generateButton && !generateButton.disabled) {
+              if (smokeBasin) {
+                const selector = document.getElementById('basinSelector');
+                if (selector) selector.value = smokeBasin;
+              }
               clickedStart = true;
               generateButton.click();
             }
@@ -128,6 +133,7 @@ function createMainWindow() {
               && !!document.getElementById('deathCounter')
               && !!document.getElementById('rainRateCounter')
               && !!document.getElementById('investIdCounter')
+              && !!document.querySelector('#basinSelector option[value="MED"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
               && !!document.getElementById('toggleSteeringButton')
@@ -147,6 +153,8 @@ function createMainWindow() {
               hasDeathCounter: !!document.getElementById('deathCounter'),
               hasRainCounter: !!document.getElementById('rainRateCounter'),
               hasInvestPanel: !!document.getElementById('investIdCounter') && !!document.getElementById('investChance7Counter'),
+              hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
+              selectedBasin: document.getElementById('basinSelector')?.value || '',
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),
               hasSteeringToggle: !!document.getElementById('toggleSteeringButton'),

@@ -3,6 +3,7 @@ const INVEST_BASIN_CODES = {
     EPAC: { code: 'EP', suffix: 'E' },
     CPAC: { code: 'CP', suffix: 'C' },
     WPAC: { code: 'WP', suffix: 'W' },
+    MED: { code: 'ME', suffix: 'M' },
     NIO: { code: 'IO', suffix: 'B' },
     SIO: { code: 'SH', suffix: 'S' },
     SHEM: { code: 'SH', suffix: 'S' },
@@ -51,21 +52,25 @@ export function calculateInvestOutlook(cyclone, env = {}) {
     const isLand = !!env.isLand;
     const isNearLand = !!env.isNearLand;
 
+    const isMedicane = cyclone?.basin === 'MED';
     const windScore = clamp((intensity - 17) / 18, 0, 1);
-    const oceanScore = clamp((sst - 25.4) / 3.0, 0, 1) * 0.55 + clamp((ohc - 35) / 70, 0, 1) * 0.45;
+    const oceanScore = isMedicane
+        ? clamp((sst - 18.0) / 6.5, 0, 1) * 0.58 + clamp((ohc - 10) / 48, 0, 1) * 0.42
+        : clamp((sst - 25.4) / 3.0, 0, 1) * 0.55 + clamp((ohc - 35) / 70, 0, 1) * 0.45;
     const shearScore = 1 - clamp((shear - 10) / 34, 0, 1);
     const moistureScore = clamp((humidity - 52) / 36, 0, 1);
     const convectionScore = clamp((rainRate - 4) / 36, 0, 1);
     const landPenalty = isLand ? 0.42 : (isNearLand ? 0.82 : 1.0);
     const monsoonBonus = cyclone?.isMonsoonDepression ? 0.08 : 0;
+    const medicaneBonus = isMedicane ? 0.05 : 0;
     const targetOrganization = clamp(
-        (windScore * 0.28 + oceanScore * 0.24 + shearScore * 0.2 + moistureScore * 0.14 + convectionScore * 0.14 + monsoonBonus) * landPenalty,
+        (windScore * 0.28 + oceanScore * 0.24 + shearScore * 0.2 + moistureScore * 0.14 + convectionScore * 0.14 + monsoonBonus + medicaneBonus) * landPenalty,
         0,
         1
     );
     const noise = (Math.random() - 0.5) * 0.045;
     const organization = clamp(previousOrganization * 0.7 + targetOrganization * 0.3 + noise, 0, 1);
-    const closedLow = organization >= 0.48 && intensity >= 23 && shear < 30 && !isLand;
+    const closedLow = organization >= (isMedicane ? 0.44 : 0.48) && intensity >= 23 && shear < (isMedicane ? 34 : 30) && !isLand;
 
     let chance48h = roundToNearestTen(organization * 72 + windScore * 18 + oceanScore * 12 - Math.max(0, shear - 24) * 0.8);
     let chance7d = roundToNearestTen(chance48h + oceanScore * 18 + shearScore * 10 + moistureScore * 6);

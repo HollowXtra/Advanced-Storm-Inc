@@ -56,6 +56,12 @@ export const NAME_LISTS = {
         'Arani', 'Bapu', 'Cari', 'Deni', 'Ecaí', 'Guará', 'Iba', 'Jaguar', 'Kurumí', 'Mani', 'Oquira', 'Potira', 'Raoni', 'Ubá', 'Yakecan',
         'Akará', 'Biguá', 'Caue', 'Domó', 'Endy', 'Guarani', 'Iguaçú', 'Jaci', 'Kaeté', 'Maracá', 'Okara', 'Poti', 'Reri', 'Sumé', 'Tupã',
         'Upaba', 'Votu', 'Ybba', 'Zeus'
+    ],
+
+    'MED': [
+        'Ianos', 'Zorbas', 'Numa', 'Rolf', 'Qendresa', 'Apollo', 'Daniel', 'Athena', 'Cassilda', 'Trixie',
+        'Udine', 'Blas', 'Elpis', 'Helios', 'Minerva', 'Orion', 'Selene', 'Theron', 'Adria', 'Ionis',
+        'Libeccio', 'Mistral', 'Sirocco', 'Vega'
     ]
 };
 
@@ -201,6 +207,9 @@ export const windToPressure = (windKts, circulationSize = 300, basin = 'WPAC', e
           case 'NIO':
               backgroundPressure = 1010; 
               break;
+          case 'MED':
+              backgroundPressure = 1014;
+              break;
           default:
               backgroundPressure = 1018; 
         }
@@ -290,5 +299,17 @@ export function getSST(lat, lon, month, globalTempK = 289) {
     });
 
     baseSST += currentAdjustment;
+
+    const medLon = normalizeLongitude(lon);
+    const isMediterranean = medLon >= -6 && medLon <= 36 && lat >= 30 && lat <= 46;
+    if (isMediterranean) {
+        const medSeason = 0.5 + 0.5 * Math.cos((month - 9) * (Math.PI / 6));
+        const ionianWarmth = Math.exp(-((shortestLongitudeDistance(medLon, 18) ** 2) / (2 * 9 ** 2) + ((lat - 36.5) ** 2) / (2 * 5 ** 2)));
+        const levantineWarmth = Math.exp(-((shortestLongitudeDistance(medLon, 30) ** 2) / (2 * 8 ** 2) + ((lat - 34) ** 2) / (2 * 4.5 ** 2)));
+        const westernCoolPocket = Math.exp(-((shortestLongitudeDistance(medLon, 3) ** 2) / (2 * 7 ** 2) + ((lat - 39) ** 2) / (2 * 4 ** 2)));
+        baseSST += 0.8 + medSeason * 1.4 + ionianWarmth * 0.9 + levantineWarmth * 1.2 - westernCoolPocket * 0.45;
+        baseSST = Math.max(13.5, baseSST);
+    }
+
     return Math.max(0, Math.min(60, baseSST));
 }

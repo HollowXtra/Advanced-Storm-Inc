@@ -15,7 +15,8 @@ const basinConfig = {
     'NIO':  { lon: { min: 60,  max: 100 }, lat: { min: 5, max: 25 } },   // 北印度洋
     'SHEM':  { lon: { min: 140,  max: 200 }, lat: { min: -15, max: -5 } },   // 南太平洋
     'SIO':  { lon: { min: 30,  max: 140 }, lat: { min: -15, max: -5 } },
-    'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } }
+    'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } },
+    'MED': { lon: { min: -5.5, max: 36 }, lat: { min: 31, max: 41.5 } }
 };
 
 const genesisProfiles = {
@@ -52,6 +53,13 @@ const genesisProfiles = {
     SATL: [
         { weight: 1.0, lon: -35, lonSpread: 10, lat: -19, latSpread: 4.0, peaks: [2, 3], motion: { direction: 235, spread: 28, speed: 8.0 } },
         { weight: 0.6, lon: -15, lonSpread: 8, lat: -22, latSpread: 3.5, peaks: [2, 3], motion: { direction: 225, spread: 28, speed: 9.0 } }
+    ],
+    MED: [
+        { weight: 2.4, lon: 18.5, lonSpread: 5.5, lat: 36.6, latSpread: 2.1, peaks: [9, 10, 11], motion: { direction: 82, spread: 42, speed: 7.0 } },
+        { weight: 1.7, lon: 13.0, lonSpread: 4.5, lat: 36.0, latSpread: 1.8, peaks: [10, 11, 12], motion: { direction: 92, spread: 48, speed: 6.5 } },
+        { weight: 1.1, lon: 2.5, lonSpread: 4.5, lat: 39.0, latSpread: 1.6, peaks: [9, 10, 11], motion: { direction: 95, spread: 55, speed: 6.0 } },
+        { weight: 0.8, lon: 28.5, lonSpread: 4.0, lat: 34.5, latSpread: 1.8, peaks: [9, 10, 1], motion: { direction: 55, spread: 44, speed: 7.5 } },
+        { weight: 0.45, lon: 20.5, lonSpread: 5.0, lat: 35.2, latSpread: 2.0, peaks: [1, 2, 12], motion: { direction: 70, spread: 60, speed: 5.8 } }
     ]
 };
 
@@ -89,10 +97,17 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+function isMedicaneBasin(cycloneOrBasin) {
+    return (typeof cycloneOrBasin === 'string' ? cycloneOrBasin : cycloneOrBasin?.basin) === 'MED';
+}
+
 function calculateStormStructure(cyclone, totalShear = 0) {
     const intensity = Number(cyclone.intensity || 0);
+    const isMedicane = isMedicaneBasin(cyclone);
     const size = clamp(Number(cyclone.circulationSize || 300), 100, 800);
-    const rmwKm = clamp(7 + size * 0.12 - Math.max(0, intensity - 75) * 0.12, 8, 95);
+    const rmwKm = isMedicane
+        ? clamp(5 + size * 0.09 - Math.max(0, intensity - 45) * 0.08, 8, 48)
+        : clamp(7 + size * 0.12 - Math.max(0, intensity - 75) * 0.12, 8, 95);
     const ohc = Number(cyclone.ohcKjCm2 || 0);
     const humidity = Number(cyclone.environmentHumidity || 72);
     const ercActive = cyclone.ercState && cyclone.ercState !== 'none';
@@ -102,7 +117,10 @@ function calculateStormStructure(cyclone, totalShear = 0) {
     const compactCore = clamp((intensity - 90) / 55, 0, 1) * clamp((ohc - 45) / 75, 0, 1) * clamp((78 - totalShear) / 78, 0, 1);
     const pinholeScore = ercActive ? 0 : compactCore * (humidity >= 68 ? 1 : 0.65);
 
-    let eyeRadiusKm = intensity >= 64 ? clamp(42 - (intensity - 64) * 0.28 + size * 0.015, 6, 62) : 0;
+    const eyeThreshold = isMedicane ? 48 : 64;
+    let eyeRadiusKm = intensity >= eyeThreshold
+        ? clamp((isMedicane ? 21 : 42) - (intensity - eyeThreshold) * 0.2 + size * (isMedicane ? 0.01 : 0.015), 5, isMedicane ? 34 : 62)
+        : 0;
     let secondaryEyewallRadiusKm = 0;
     let dualWindMaxima = false;
 
@@ -184,7 +202,8 @@ function getInitialMotion(lon, lat, basin, profile = null) {
         NIO: { direction: 305, spread: 36, speed: 8 },
         SHEM: { direction: 248, spread: 24, speed: 10 },
         SIO: { direction: 248, spread: 24, speed: 10 },
-        SATL: { direction: 232, spread: 28, speed: 8 }
+        SATL: { direction: 232, spread: 28, speed: 8 },
+        MED: { direction: 88, spread: 48, speed: 6.5 }
     };
     const motion = profile?.motion || fallbackByBasin[basin] || fallbackByBasin.WPAC;
     const polewardBias = Math.abs(lat) > 18 ? (lat >= 0 ? 12 : -12) : 0;
@@ -299,6 +318,7 @@ export function getWindVectorAt(lon, lat, month, cyclone, pressureSystems) {
 export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, globalShear, customLon = null, customLat = null) {
     let lat, lon, isOverLand;
     let selectedProfile = null;
+    const isMedicane = isMedicaneBasin(basin);
 
     let useCustomCoords = (customLon !== null && customLat !== null);
     
@@ -335,7 +355,7 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
                 bestCandidate = { ...candidate, isOverLand: status.isLand, score };
             }
 
-            const minGenesisSst = attempt < 100 ? 25.7 : 25.1;
+            const minGenesisSst = isMedicane ? (attempt < 120 ? 17.5 : 15.8) : (attempt < 100 ? 25.7 : 25.1);
             if (!status.isLand && sst >= minGenesisSst) {
                 lon = candidate.lon;
                 lat = candidate.lat;
@@ -357,26 +377,27 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
     const initialSST = getSST(lat, lon, month, globalTemp);
     let isSubtropical = false;
     let subtropicalTransitionTime = 0;
-    if (initialSST < 27.5 && Math.random() < 0.75 && (lon > 122 || lon < 40)) {
+    if (isMedicane || (initialSST < 27.5 && Math.random() < 0.75 && (lon > 122 || lon < 40))) {
         isSubtropical = true;
-        const durationSteps = 0 + Math.floor(Math.random() * 25);
+        const durationSteps = isMedicane ? 2 + Math.floor(Math.random() * 12) : 0 + Math.floor(Math.random() * 25);
         subtropicalTransitionTime = durationSteps * 3;
     }
 
     let isMonsoonDepression = false;
     let monsoonDepressionEndTime = 0;
-    if (Math.random() < (0.2 + globalTemp / 72.25 - 4) && (lat > 0)) {
+    if (!isMedicane && Math.random() < (0.2 + globalTemp / 72.25 - 4) && (lat > 0)) {
         isMonsoonDepression = true;
         const durationSteps = Math.floor(Math.random() * 50);
         monsoonDepressionEndTime = durationSteps * 3;
     }
 
     const initialMotion = getInitialMotion(lon, lat, basin, selectedProfile);
+    const initialSize = isMedicane ? 145 + Math.random() * 115 : 150 + Math.random() * 350;
 
     return {
         lat: lat,
         lon: lon,
-        intensity: 23 + Math.random() * 2,
+        intensity: (isMedicane ? 21.5 : 23) + Math.random() * (isMedicane ? 3.5 : 2),
         direction: initialMotion.direction,
         speed: initialMotion.speed,
         basin: basin,
@@ -405,6 +426,8 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         maxRainRateMmHr: 0,
         rainShieldKm: 0,
         environmentHumidity: 74,
+        medicaneCore: isMedicane,
+        medicaneUpperSupport: isMedicane ? 0.45 + Math.random() * 0.35 : 0,
         centralPressure: 1010,
         isInvest: true,
         investId: '',
@@ -430,7 +453,7 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         ercMpiReduction: 0,
         ercSizeFactor: 1.0,
         stormStructure: {
-            rmwKm: 28,
+            rmwKm: isMedicane ? 22 : 28,
             eyeRadiusKm: 0,
             secondaryEyewallRadiusKm: 0,
             dualWindMaxima: false,
@@ -440,7 +463,7 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
             asymmetry: 0,
             rainShieldKm: 0
         },
-        circulationSize: 150 + Math.random() * 350,
+        circulationSize: initialSize,
         r34: 0, r50: 0, r64: 0,
         motionWobble: (Math.random() - 0.5) * 4,
         motionPhase: Math.random() * Math.PI * 2,
@@ -460,6 +483,30 @@ export function initializePressureSystems(cyclone, month) {
     const seasonalFactor = (Math.cos((month - 8) * (Math.PI / 6)) + 1) / 2;
     const baseLat = cyclone.lat; 
     const baseLon = cyclone.lon; 
+    const isMedicane = isMedicaneBasin(cyclone);
+
+    if (isMedicane) {
+        tempAllSystems.push({
+            type: 'low',
+            x: baseLon - 4 + (Math.random() - 0.5) * 6,
+            y: baseLat + 4 + (Math.random() - 0.5) * 4,
+            baseSigmaX: 9 + Math.random() * 8, sigmaX: 12 + Math.random() * 7, sigmaY: 6 + Math.random() * 4,
+            strength: -(14 + Math.random() * 10), baseStrength: -(14 + Math.random() * 10),
+            velocityX: 0.25 + Math.random() * 0.35, velocityY: (Math.random() - 0.5) * 0.18,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.018 + Math.random() * 0.015, oscillationAmount: 0.16,
+            noiseLayers: []
+        });
+        tempAllSystems.push({
+            type: 'high',
+            x: baseLon + 12 + (Math.random() - 0.5) * 9,
+            y: baseLat - 6 + (Math.random() - 0.5) * 4,
+            baseSigmaX: 16 + Math.random() * 12, sigmaX: 16 + Math.random() * 12, sigmaY: 7 + Math.random() * 5,
+            strength: 10 + Math.random() * 8, baseStrength: 10 + Math.random() * 8,
+            velocityX: 0.15 + Math.random() * 0.25, velocityY: (Math.random() - 0.5) * 0.12,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.012 + Math.random() * 0.01, oscillationAmount: 0.18,
+            noiseLayers: []
+        });
+    }
 
     // 1. Tropical Low
     tempAllSystems.push({
@@ -801,6 +848,7 @@ export function calculateSteering(lon, lat, pressureSystemsObj, bias = { u: 0, v
 export function updateCycloneState(cyclone, pressureSystems, frontalZone, world, month, globalTemp, globalShearSetting, nameIndex) {
     let updatedCyclone = { ...cyclone };
     updatedCyclone.age += 3;
+    const isMedicane = isMedicaneBasin(updatedCyclone);
 
     // --- ACE Calculation ---
     if (updatedCyclone.age % 6 === 0 && updatedCyclone.intensity >= 34 && !updatedCyclone.isExtratropical) {
@@ -819,7 +867,13 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     // Wind Shear
     let totalShear = physicalShear * (globalShearSetting / 100.0);
     const isWinterHalf = (month >= 11 || month <= 4);
-    const shearEventProb = (isWinterHalf && updatedCyclone.lon > 100 && updatedCyclone.lon < 121 && updatedCyclone.lat > 16) ? 0.55 : (isWinterHalf ? 0.045 * (globalShearSetting ** 2 / 10000) : 0.03 * (globalShearSetting ** 2 / 10000));
+    const medicaneSeason = (month >= 9 || month <= 2) ? 1 : 0;
+    if (isMedicane) {
+        totalShear *= 0.78 + (medicaneSeason ? -0.08 : 0.08);
+    }
+    const shearEventProb = isMedicane
+        ? (0.025 + (medicaneSeason ? 0.01 : 0.04) * (globalShearSetting / 100))
+        : ((isWinterHalf && updatedCyclone.lon > 100 && updatedCyclone.lon < 121 && updatedCyclone.lat > 16) ? 0.55 : (isWinterHalf ? 0.045 * (globalShearSetting ** 2 / 10000) : 0.03 * (globalShearSetting ** 2 / 10000)));
     // Random shear event
     if (updatedCyclone.shearEventActive) {
         if (updatedCyclone.age >= updatedCyclone.shearEventEndTime) {
@@ -850,7 +904,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     const turnRate = updatedCyclone.isExtratropical ? 0.38 : 0.16 + Math.min(0.1, Math.abs(updatedCyclone.lat) / 160);
     updatedCyclone.direction = (updatedCyclone.direction + angleDiff * turnRate + 360) % 360;
 
-    const steeringSpeedKnots = Math.max(2, Math.min(42, Math.hypot(smoothedSteerU, smoothedSteerV) * 1.94384));
+    const steeringSpeedKnots = Math.max(2, Math.min(isMedicane ? 26 : 42, Math.hypot(smoothedSteerU, smoothedSteerV) * 1.94384));
     const speedResponse = updatedCyclone.isExtratropical ? 0.36 : 0.18 + Math.min(0.2, Math.abs(updatedCyclone.lat) / 120);
     updatedCyclone.speed += (steeringSpeedKnots - updatedCyclone.speed) * speedResponse;
 
@@ -921,8 +975,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         // MPI Logic
         let mpi = sst > 25.0 ? 264.28 * (1 - Math.exp(-0.182 * (sst - 25.00))) : 0; // [保留]
         
-        const ohcSupport = clamp((updatedCyclone.ohcKjCm2 - 50) / 95, -0.45, 0.55);
-        mpi *= 1 + ohcSupport * 0.24;
+        if (isMedicane) {
+            const upperSupport = clamp(Number(updatedCyclone.medicaneUpperSupport || 0.45) + (medicaneSeason ? 0.16 : -0.06) - totalShear / 95, 0, 1);
+            mpi = sst > 17.0
+                ? clamp(26 + (sst - 17.0) * 6.4 + upperSupport * 27 + (globalTemp - 289) * 1.8, 22, 88)
+                : 0;
+        }
+
+        const ohcSupport = isMedicane
+            ? clamp((updatedCyclone.ohcKjCm2 - 12) / 55, -0.35, 0.38)
+            : clamp((updatedCyclone.ohcKjCm2 - 50) / 95, -0.45, 0.55);
+        mpi *= 1 + ohcSupport * (isMedicane ? 0.16 : 0.24);
 
         // ERC Logic
         switch (updatedCyclone.ercState) {
@@ -977,15 +1040,18 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         let latF = (0.4 / Math.abs(updatedCyclone.lat) ** 2) * (updatedCyclone.intensity / 50);
         let ri = Math.random() > 0.97 ? Math.random() * 0.35 - 0.05 : 0;
         let intensificationRate = Math.random() * (0.14 + ri) * Math.min(1, ((updatedCyclone.intensity - 13) / 65)) - latF; // [保留]
+        if (isMedicane) {
+            intensificationRate = Math.random() * (0.085 + ri * 0.45) * clamp((updatedCyclone.intensity - 14) / 48, 0.15, 1.0) + 0.012 - totalShear * 0.00055;
+        }
 
         if (updatedCyclone.isMonsoonDepression) {
             intensificationRate *= (Math.random() + 0.10) * 0.70; 
         }
         
-        const potentialChange = (mpi - updatedCyclone.intensity) * intensificationRate;
+        let potentialChange = (mpi - updatedCyclone.intensity) * intensificationRate;
         
         // Shear Factors
-        let shear = totalShear / 10.0; 
+        let shear = totalShear / (isMedicane ? 13.5 : 10.0);
         
         // Fix term
         const nioShearBoost = (updatedCyclone.lat >= 5 && updatedCyclone.lat <= 30 && updatedCyclone.lon >= 30 && updatedCyclone.lon <= 100) ? 8.5 : 0;
@@ -999,6 +1065,10 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         const latGradientFactor = baseGradient + highLatCorrection;
 
         shear += Math.max(0, (Math.abs(updatedCyclone.lat) * latGradientFactor - 30 + nioShearBoost + shemShearBoost)) / 20;
+        if (isMedicane) {
+            shear = Math.max(0, shear * 0.62 - 0.55);
+            potentialChange += clamp(Number(updatedCyclone.medicaneUpperSupport || 0.5) - totalShear / 70, -0.2, 0.55);
+        }
 
         // Dry Air Logic
         const samplingRadiusDeg = cyclone.circulationSize * 0.005;
@@ -1028,7 +1098,10 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     }
 
     // Extratropical Transition Trigger
-    if ((!updatedCyclone.isExtratropical && sst < 25.5 && (Math.abs(updatedCyclone.lat) > frontalZone.latitude) || sst < 23.0) || (updatedCyclone.isSubtropical && sst < 25.5)) {
+    const shouldTransitionExtratropical = isMedicane
+        ? ((!updatedCyclone.isExtratropical && (sst < 16.0 || updatedCyclone.lat > 45 || updatedCyclone.lat < 29 || updatedCyclone.lon < -9 || updatedCyclone.lon > 42)) || (updatedCyclone.isSubtropical && sst < 16.8 && updatedCyclone.age > 30))
+        : ((!updatedCyclone.isExtratropical && sst < 25.5 && (Math.abs(updatedCyclone.lat) > frontalZone.latitude) || sst < 23.0) || (updatedCyclone.isSubtropical && sst < 25.5));
+    if (shouldTransitionExtratropical) {
         updatedCyclone.isExtratropical = true;
         if (updatedCyclone.extratropicalStage === 'none') { 
             if (Math.random() < 0.33 && Math.abs(updatedCyclone.lat) > 25) { 
@@ -1054,10 +1127,12 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     } else {
         updatedCyclone.circulationSize *= 1.002;
     }
-    updatedCyclone.circulationSize = Math.max(100, Math.min(updatedCyclone.circulationSize, 800));
+    updatedCyclone.circulationSize = isMedicane
+        ? Math.max(95, Math.min(updatedCyclone.circulationSize, 380))
+        : Math.max(100, Math.min(updatedCyclone.circulationSize, 800));
     updatedCyclone.intensity = Math.max(10, updatedCyclone.intensity);
     
-    const maxMotionSpeed = updatedCyclone.isExtratropical ? 44 : 32;
+    const maxMotionSpeed = isMedicane ? (updatedCyclone.isExtratropical ? 34 : 24) : (updatedCyclone.isExtratropical ? 44 : 32);
     updatedCyclone.speed = clamp(updatedCyclone.speed, 2, maxMotionSpeed);
     updatedCyclone.motionWobble = clamp(
         (Number.isFinite(updatedCyclone.motionWobble) ? updatedCyclone.motionWobble : 0) * 0.78 + (Math.random() - 0.5) * 3.8,
@@ -1183,6 +1258,10 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.formationChance7d || 0,
         !!updatedCyclone.isInvest
     ]);
+
+    if (isMedicane && (updatedCyclone.lon < -12 || updatedCyclone.lon > 45 || updatedCyclone.lat < 27 || updatedCyclone.lat > 48)) {
+        updatedCyclone.status = 'dissipated';
+    }
 
     if (updatedCyclone.intensity < 17 || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
         updatedCyclone.status = 'dissipated';

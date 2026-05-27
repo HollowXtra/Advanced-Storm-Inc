@@ -4275,7 +4275,7 @@ export function startNewsAnimation(canvas, worldData, cyclone, pathForecasts, ba
     const particles = [];
     
     // Common Vars
-    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
     const basinCode = basinMap[basin] || 'XX';
     const cycloneNumStr = String(simulationCount).padStart(2, '0');
     const displayName = cyclone.name ? cyclone.name.toUpperCase() : `${basinCode} ${cycloneNumStr}`;

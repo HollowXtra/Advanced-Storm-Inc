@@ -120,6 +120,8 @@ function createMainWindow() {
               && !!window.stormIncDesktop?.multiplayer
               && !!document.getElementById('map-container')
               && !!document.getElementById('satCanvas')
+              && !!document.getElementById('gameIntroOverlay')
+              && !!document.getElementById('menuStartButton')
               && !!generateButton;
 
             if (runSimulationSmoke && baseReady && !clickedStart && generateButton && !generateButton.disabled) {
@@ -161,6 +163,8 @@ function createMainWindow() {
               hasMultiplayerBridge: !!window.stormIncDesktop?.multiplayer,
               hasMapContainer: !!document.getElementById('map-container'),
               hasSatelliteCanvas: !!document.getElementById('satCanvas'),
+              hasGameIntro: !!document.getElementById('gameIntroOverlay') && !!document.getElementById('introScene'),
+              hasGameMenu: !!document.getElementById('mainMenuScene') && !!document.getElementById('menuStartButton'),
               hasGenerateButton: !!generateButton,
               clickedStart,
               hasDamageCounter: !!document.getElementById('damageCounter'),

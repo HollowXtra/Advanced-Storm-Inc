@@ -38,6 +38,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const helpButton = document.getElementById('helpButton');
     const helpModal = document.getElementById('helpModal');
     const closeHelpModal = document.getElementById('closeHelpModal');
+    const gameIntroOverlay = document.getElementById('gameIntroOverlay');
+    const introScene = document.getElementById('introScene');
+    const mainMenuScene = document.getElementById('mainMenuScene');
+    const introContinueButton = document.getElementById('introContinueButton');
+    const introSkipButton = document.getElementById('introSkipButton');
+    const gameMenuButton = document.getElementById('gameMenuButton');
+    const menuCloseButton = document.getElementById('menuCloseButton');
+    const menuStartButton = document.getElementById('menuStartButton');
+    const menuResumeButton = document.getElementById('menuResumeButton');
+    const menuMultiplayerButton = document.getElementById('menuMultiplayerButton');
+    const menuSettingsButton = document.getElementById('menuSettingsButton');
+    const menuHelpButton = document.getElementById('menuHelpButton');
+    const menuBasinSelector = document.getElementById('menuBasinSelector');
+    const menuMonthSelector = document.getElementById('menuMonthSelector');
+    const menuYearSelector = document.getElementById('menuYearSelector');
+    const menuStatusText = document.getElementById('menuStatusText');
     const sfxButton = document.getElementById('sfxButton');
     const sfxIcon = sfxButton.querySelector('i');
     const multiplayerButton = document.getElementById('multiplayerButton');
@@ -365,6 +381,85 @@ document.addEventListener('DOMContentLoaded', () => {
             steeringStep: mobile ? Math.max(118, Math.min(150, window.innerWidth / 4.7)) : null,
             showCityLabels: !mobile || !activeStorm || !heavyOverlayActive || activeAge % 6 === 0
         };
+    }
+
+    let introMenuTimer = null;
+
+    function syncMenuControlsFromMain() {
+        if (menuBasinSelector && basinSelector) menuBasinSelector.value = basinSelector.value || 'WPAC';
+        if (menuMonthSelector && monthSelector) menuMonthSelector.value = monthSelector.value || '7';
+        if (menuYearSelector) {
+            menuYearSelector.min = String(SIM_YEAR_MIN);
+            menuYearSelector.max = String(SIM_YEAR_MAX);
+            menuYearSelector.value = String(getActiveSimulationYear());
+        }
+    }
+
+    function syncMainControlsFromMenu() {
+        if (basinSelector && menuBasinSelector && !basinSelector.disabled) {
+            basinSelector.value = menuBasinSelector.value;
+        }
+        if (monthSelector && menuMonthSelector && !monthSelector.disabled) {
+            monthSelector.value = menuMonthSelector.value;
+        }
+        if (yearSelector && menuYearSelector && !yearSelector.disabled) {
+            state.currentYear = normalizeSimulationYear(menuYearSelector.value || state.currentYear);
+            yearSelector.value = String(state.currentYear);
+            menuYearSelector.value = String(state.currentYear);
+            localStorage.setItem('tcs_sim_year', String(state.currentYear));
+        }
+        if (!state.simulationInterval) {
+            redrawIdleBasinPreview();
+        }
+    }
+
+    function updateGameMenuState() {
+        if (!menuStartButton && !menuStatusText) return;
+        const canStart = !!state.world && !generateButton.disabled;
+        const activeStorm = state.cyclone?.status === 'active';
+        if (menuStartButton) {
+            menuStartButton.disabled = !canStart;
+            const startLabel = menuStartButton.querySelector('span');
+            if (startLabel) {
+                startLabel.innerHTML = activeStorm
+                    ? '<i class="fa-solid fa-rotate-right mr-3"></i>Restart'
+                    : '<i class="fa-solid fa-play mr-3"></i>Play';
+            }
+        }
+        if (menuStatusText) {
+            menuStatusText.textContent = canStart ? (activeStorm ? 'Storm active' : 'Ready') : 'Loading';
+            menuStatusText.className = `mt-1 text-xs font-mono uppercase tracking-[0.2em] ${canStart ? 'text-emerald-300' : 'text-amber-300'}`;
+        }
+    }
+
+    function showMainMenu() {
+        if (!gameIntroOverlay || !mainMenuScene || !introScene) return;
+        clearTimeout(introMenuTimer);
+        syncMenuControlsFromMain();
+        updateGameMenuState();
+        gameIntroOverlay.classList.remove('game-shell-hidden');
+        introScene.classList.add('hidden');
+        mainMenuScene.classList.remove('hidden');
+        mainMenuScene.classList.add('flex');
+        localStorage.setItem('tcs_intro_seen', 'true');
+    }
+
+    function hideGameMenu() {
+        if (!gameIntroOverlay) return;
+        gameIntroOverlay.classList.add('game-shell-hidden');
+        clearTimeout(introMenuTimer);
+    }
+
+    function showGameIntro() {
+        if (!gameIntroOverlay || !introScene || !mainMenuScene) return;
+        syncMenuControlsFromMain();
+        updateGameMenuState();
+        gameIntroOverlay.classList.remove('game-shell-hidden');
+        introScene.classList.remove('hidden');
+        mainMenuScene.classList.add('hidden');
+        mainMenuScene.classList.remove('flex');
+        const hasSeenIntro = localStorage.getItem('tcs_intro_seen') === 'true';
+        introMenuTimer = setTimeout(showMainMenu, hasSeenIntro ? 1200 : 3200);
     }
 
     let radarCanvas, radarCtx;
@@ -806,6 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             initTerrainSystem(img.src, state.world).then(() => {
                 console.log("Terrain Logic Ready.");
                 generateButton.disabled = false;
+                updateGameMenuState();
             });
             
             // B. WebGL 渲染用的地形纹理 (同步上传)
@@ -1831,6 +1927,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
             customLatInput.disabled = false;
             siteLonInput.disabled = false;
             siteLatInput.disabled = false;
+            updateGameMenuState();
 
             // 4. 创建最终统计对象 (使用 basinCode 组合编号, 如 "WP 01")
             const finalNumberLabel = (state.cyclone.investStatus !== 'upgraded' && (state.cyclone.investDisplayId || state.cyclone.investId))
@@ -2071,6 +2168,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
     function startSimulation() {
         playStart();
+        hideGameMenu();
         selectedHistoryPointIndex = -1;
         if (state.simulationInterval) clearInterval(state.simulationInterval);
         state.isPaused = false;
@@ -2173,6 +2271,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         updateToggleButtonVisual(togglePathButton, state.showPathForecast);
         updateToggleButtonVisual(toggleSteeringButton, state.showSteeringCurrents);
         state.simulationInterval = setInterval(updateSimulation, state.simulationSpeed);
+        updateGameMenuState();
     }
     
     function togglePause() {
@@ -2383,8 +2482,58 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     }
 
     // --- 事件监听器 ---
+    if (introContinueButton) introContinueButton.addEventListener('click', () => {
+        playClick();
+        showMainMenu();
+    });
+    if (introSkipButton) introSkipButton.addEventListener('click', () => {
+        playClick();
+        showMainMenu();
+    });
+    if (gameMenuButton) gameMenuButton.addEventListener('click', () => {
+        playClick();
+        showMainMenu();
+    });
+    if (menuCloseButton) menuCloseButton.addEventListener('click', () => {
+        playClick();
+        hideGameMenu();
+    });
+    if (menuResumeButton) menuResumeButton.addEventListener('click', () => {
+        playClick();
+        hideGameMenu();
+    });
+    if (menuStartButton) menuStartButton.addEventListener('click', () => {
+        if (generateButton.disabled) {
+            playError();
+            return;
+        }
+        syncMainControlsFromMenu();
+        startSimulation();
+    });
+    if (menuMultiplayerButton) menuMultiplayerButton.addEventListener('click', () => {
+        hideGameMenu();
+        multiplayerButton?.click();
+    });
+    if (menuSettingsButton) menuSettingsButton.addEventListener('click', () => {
+        hideGameMenu();
+        settingsMenu.classList.remove('hidden');
+        playClick();
+    });
+    if (menuHelpButton) menuHelpButton.addEventListener('click', () => {
+        hideGameMenu();
+        helpButton?.click();
+    });
+    [menuBasinSelector, menuMonthSelector, menuYearSelector].forEach((control) => {
+        if (!control) return;
+        control.addEventListener('change', () => {
+            syncMainControlsFromMenu();
+            updateGameMenuState();
+        });
+    });
+
     generateButton.addEventListener('click', startSimulation);
     pauseButton.addEventListener('click', togglePause);
+    showGameIntro();
 
     if (multiplayerButton && multiplayerPanel) {
         multiplayerButton.addEventListener('click', () => {
@@ -3740,6 +3889,28 @@ contentArea.innerHTML = `
     document.addEventListener('keydown', (event) => {
         // [关键] 如果焦点在输入框或文本域内，不触发快捷键，防止打字冲突
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        const menuVisible = gameIntroOverlay && !gameIntroOverlay.classList.contains('game-shell-hidden');
+        if (menuVisible) {
+            if (event.code === 'Escape') {
+                event.preventDefault();
+                hideGameMenu();
+                return;
+            }
+            if (event.code === 'Enter' || event.code === 'Space') {
+                event.preventDefault();
+                if (mainMenuScene && !mainMenuScene.classList.contains('hidden')) {
+                    menuStartButton?.click();
+                } else {
+                    showMainMenu();
+                }
+                return;
+            }
+        } else if (event.code === 'Escape' || event.code === 'KeyM') {
+            event.preventDefault();
+            showMainMenu();
             return;
         }
 

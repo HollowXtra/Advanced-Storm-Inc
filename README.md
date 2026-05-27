@@ -18,6 +18,7 @@ For Discord overlay setup, see `DISCORD_OVERLAY.md`.
 
 ## Credits
 Fictionia map credit: diamondlife.
+Fork credit: Hurricane Nestor - forked from the OG link: https://github.com/EnceladusCat/EnceladusCat.github.io
 
 ## Note
 The music files are composed/remixed by me & shaped with AI. It's okay to use them freely, but the author shall not be held liable for any issues arising from the use of those music.

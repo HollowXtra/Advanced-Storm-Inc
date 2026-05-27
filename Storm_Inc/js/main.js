@@ -15,6 +15,7 @@ import { generatePathForecasts } from './forecast-models.js';
 // [修改] 引入新的历史强度图绘制函数
 import { drawMap, drawFinalPath, drawHistoricalIntensityChart, drawHumidityField, calculateBackgroundHumidity, calculateTotalHumidity, drawAllHistoryTracks, renderJTWCStyle, renderProbabilitiesStyle, drawStationGraph, renderPhaseSpace, startNewsAnimation, renderStationSynopticChart } from './visualization.js';
 import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, formatSurge, updateImpactState } from './impact-system.js';
+import { buildInvestDisplayId, buildInvestId, classifyInvestChance } from './invest-system.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
 import { playClick, playToggleOn, playToggleOff, playStart, playError, playAlert, playUpgradeSound, playCat5Sound, toggleSFX } from './audio.js';
 
@@ -83,6 +84,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const parStatus = document.getElementById('parStatus');
     const warningList = document.getElementById('warning-list');
     const warningCycle = document.getElementById('warning-cycle');
+    const investIdCounter = document.getElementById('investIdCounter');
+    const investChance48Counter = document.getElementById('investChance48Counter');
+    const investChance7Counter = document.getElementById('investChance7Counter');
+    const investOrgCounter = document.getElementById('investOrgCounter');
     const mapContainer = d3.select("#map-container");
     const chartContainer = d3.select("#intensity-chart-container");
     const forecastContainer = document.getElementById('intensity-chart-section'); // [新增] 获取容器元素
@@ -260,6 +265,8 @@ document.addEventListener('DOMContentLoaded', () => {
         warningAdvisory: { active: [], signature: '', issuedHour: null },
         lastWarningBannerSignature: '',
         lastParBannerSignature: '',
+        lastInvestBannerSignature: '',
+        nextInvestNumbers: {},
         isSiteSelected: false,
         idleRotation: Math.random() * 50
     };
@@ -294,6 +301,66 @@ document.addEventListener('DOMContentLoaded', () => {
         if (knots < 113) return `${term} (CAT 3)`;
     
         return `SUPER ${term} (CAT ${knots < 137 ? '4' : '5'})`;
+    }
+
+    function getNextInvestNumber(basin = 'WPAC') {
+        const key = basin || 'WPAC';
+        const next = state.nextInvestNumbers[key] ?? 90;
+        state.nextInvestNumbers[key] = next >= 99 ? 90 : next + 1;
+        return next;
+    }
+
+    function assignInvestDesignation(cyclone, basin = 'WPAC') {
+        if (!cyclone) return;
+        cyclone.basin = basin;
+        if (!cyclone.investNumber) {
+            cyclone.investNumber = getNextInvestNumber(basin);
+        }
+        cyclone.investId = buildInvestId(basin, cyclone.investNumber);
+        cyclone.investDisplayId = buildInvestDisplayId(basin, cyclone.investNumber);
+        cyclone.investStatus = cyclone.investStatus || 'open';
+        cyclone.investOpenedHour = cyclone.investOpenedHour ?? cyclone.age ?? 0;
+        cyclone.modelGuidanceAvailable = true;
+    }
+
+    function getInvestLabel(cyclone) {
+        const displayId = cyclone?.investDisplayId
+            || (cyclone?.investNumber ? buildInvestDisplayId(cyclone.basin, cyclone.investNumber) : '')
+            || cyclone?.investId
+            || '';
+        return displayId ? `INVEST ${displayId}` : 'INVEST';
+    }
+
+    function getCycloneHeadlineName(cyclone, fallbackNumber) {
+        if (cyclone?.name) return cyclone.name.toUpperCase();
+        if (cyclone?.investId || cyclone?.investDisplayId) return getInvestLabel(cyclone);
+        return `SYSTEM ${fallbackNumber}`;
+    }
+
+    function getCycloneStatusText(cyclone, peakWindSoFar = 0, cycloneNum = '01') {
+        if (!cyclone) return '--';
+        if ((cyclone.isInvest || (!cyclone.named && peakWindSoFar < 34 && cyclone.investStatus !== 'upgraded')) && (cyclone.investId || cyclone.investDisplayId)) {
+            return getInvestLabel(cyclone);
+        }
+
+        const stormName = cyclone.name ? cyclone.name.toUpperCase() : 'UNKNOWN';
+        if (peakWindSoFar >= 34 || cyclone.named) {
+            if (cyclone.intensity >= 34) {
+                return cyclone.isExtratropical ? `EX-${stormName}` : stormName;
+            }
+            if (cyclone.isExtratropical) return `EX-${stormName}`;
+            if (cyclone.isSubtropical) return `SD ${stormName}`;
+            return `TD ${stormName}`;
+        }
+
+        if (cyclone.isExtratropical) return `EX ${cycloneNum}`;
+        if (cyclone.isSubtropical) return `SD ${cycloneNum}`;
+        return `TD ${cycloneNum}`;
+    }
+
+    function getCycloneCategoryLabel(cyclone, category) {
+        if (cyclone?.isInvest) return 'Invest Disturbance';
+        return category?.name || '--';
     }
 
     // [新增] 初始化卫星云图 WebGL 上下文
@@ -679,7 +746,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function getAtcfTypeCode(windKts, isExtratropical, isSubtropical) {
+function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = false) {
+        if (isInvest) {
+            return windKts >= 24 ? 'DB' : 'LO';
+        }
         if (isSubtropical) {
             if (windKts < 34) return 'SD';
             return 'SS';
@@ -696,7 +766,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function formatBestTrack(track, cycloneInfo, simulationCount) {
         const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[cycloneInfo.basin] || 'WP';
-        const cycloneNum = String(simulationCount).padStart(2, '0');
+        const cycloneNum = String(simulationCount).padStart(2, '0');
+        const investNum = String(cycloneInfo.investNumber || 90).padStart(2, '0');
         const startDate = new Date(Date.UTC(cycloneInfo.year, cycloneInfo.month - 1, 1));
 
         return track.map((point, index) => {
@@ -711,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const vmax = Math.round(point[2]);
             const circulationSize = point[5]; 
             let mslp;
-            if (point[10] !== undefined) {
+            if (point[10] !== undefined && point[10] !== null) {
                 mslp = point[10];
             } else {
                 const circulationSize = point[5] || 300;
@@ -719,10 +790,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 mslp = Math.round(windToPressure(vmax, circulationSize, cycloneInfo.basin, envP));
             }
             
-            const type = getAtcfTypeCode(vmax, point[4], point[6]);
+            const isInvestPoint = !!point[17];
+            const trackNum = isInvestPoint && cycloneInfo.investNumber ? investNum : cycloneNum;
+            const type = getAtcfTypeCode(vmax, point[4], point[6], isInvestPoint);
 
             return [
-                basin.padEnd(2, ' '), cycloneNum.padStart(3, ' '), ` ${dateString}`, ' 00', ' BEST', '   0',
+                basin.padEnd(2, ' '), trackNum.padStart(3, ' '), ` ${dateString}`, ' 00', ' BEST', '   0',
                 lat.padStart(6, ' '), lon.padStart(7, ' '), String(vmax).padStart(4, ' '),
                 String(mslp).padStart(5, ' '), ` ${type}`,
             ].join(',');
@@ -930,6 +1003,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 parStatus.classList.remove('text-cyan-300');
             }
         }
+        updateInvestPanel();
+    }
+
+    function updateInvestPanel() {
+        const cyclone = state.cyclone || {};
+        const label = (cyclone.investId || cyclone.investDisplayId) ? getInvestLabel(cyclone) : '--';
+        const chance48 = Math.round(cyclone.formationChance48h || 0);
+        const chance7 = Math.round(cyclone.formationChance7d || 0);
+        const category = classifyInvestChance(chance7);
+        const organization = Math.round((cyclone.investOrganization || 0) * 100);
+
+        if (investIdCounter) {
+            investIdCounter.textContent = label;
+            investIdCounter.classList.toggle('text-slate-400', label === '--');
+        }
+        if (investChance48Counter) {
+            investChance48Counter.textContent = `${chance48}%`;
+            investChance48Counter.style.color = classifyInvestChance(chance48).color;
+        }
+        if (investChance7Counter) {
+            investChance7Counter.textContent = `${chance7}%`;
+            investChance7Counter.style.color = category.color;
+        }
+        if (investOrgCounter) {
+            investOrgCounter.textContent = `${organization}%`;
+            investOrgCounter.style.color = cyclone.closedLow ? '#67e8f9' : '#e2e8f0';
+        }
+    }
+
+    function refreshInvestOutlook(force = false) {
+        updateInvestPanel();
+        if (!state.cyclone || state.cyclone.status !== 'active') return;
+
+        const currentHour = state.cyclone.age || 0;
+        const isAdvisoryCycle = currentHour % 6 === 0;
+        if (!force && !isAdvisoryCycle) return;
+        if (!state.cyclone.investId && !state.cyclone.investDisplayId) return;
+
+        const label = getInvestLabel(state.cyclone);
+        const category = classifyInvestChance(state.cyclone.formationChance7d || 0);
+        const statusKey = state.cyclone.isInvest ? category.code : (state.cyclone.investStatus || 'closed').toUpperCase();
+        const signature = `${label}:${statusKey}:${!!state.cyclone.isInvest}`;
+        if (state.lastInvestBannerSignature === signature) return;
+
+        state.lastInvestBannerSignature = signature;
+        if (state.cyclone.isInvest) {
+            const headlineHTML = `TWO: <span class="text-white text-base align-middle not-italic ml-2 font-bold">${label} MONITORED</span>`;
+            const subText = `${category.label.toUpperCase()} DEVELOPMENT - ${Math.round(state.cyclone.formationChance48h || 0)}% / ${Math.round(state.cyclone.formationChance7d || 0)}%`;
+            triggerNewsBanner(headlineHTML, subText, currentHour, state.currentMonth, category.code === 'HIGH' ? 'RED' : 'ORANGE');
+            return;
+        }
+
+        if (state.cyclone.investStatus === 'upgraded') {
+            const headlineHTML = `${label} <span class="text-white text-base align-middle not-italic ml-2 font-bold">UPGRADED</span>`;
+            const subText = state.cyclone.named ? 'TROPICAL STORM ADVISORIES BEGIN' : 'CLOSED LOW FORMED - DEPRESSION MONITORED';
+            triggerNewsBanner(headlineHTML, subText, currentHour, state.currentMonth, 'ORANGE');
+        }
     }
 
     function updateWarningPanel() {
@@ -1015,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const centerEnvP = getPressureAt(state.cyclone.lon, state.cyclone.lat, state.pressureSystems);
         const centralPressure = windToPressure(state.cyclone.intensity, state.cyclone.circulationSize, state.cyclone.basin, centerEnvP);
         document.getElementById('pressure').textContent = `${centralPressure.toFixed(0)} hPa`;
-        document.getElementById('category').textContent = cat.name;
+        document.getElementById('category').textContent = getCycloneCategoryLabel(state.cyclone, cat);
         document.getElementById('ace').textContent = state.cyclone.ace.toFixed(2);
         document.getElementById('direction').textContent = `${directionToCompass(state.cyclone.direction)}`;
         document.getElementById('speed').textContent = `${state.cyclone.speed.toFixed(0)} kts`;
@@ -1057,6 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (state.cyclone.isSubtropical) statusText = `SD ${cycloneNum}`;
             else statusText = `TD ${cycloneNum}`;
         }
+        statusText = getCycloneStatusText(state.cyclone, peakWindSoFar, cycloneNum);
         document.getElementById('status').textContent = statusText;
 
         if (state.cyclone && state.pressureSystems) {
@@ -1134,7 +1265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMapInfoBox() {
         const cat = getCategory(state.cyclone.intensity, state.cyclone.isTransitioning, state.cyclone.isExtratropical, state.cyclone.isSubtropical);
         document.getElementById('map-info-time').textContent = `T+${state.cyclone.age}h`;
-        document.getElementById('map-info-intensity').textContent = `${cat.shortName} - ${state.cyclone.intensity.toFixed(0)}KT`;
+document.getElementById('map-info-intensity').textContent = `${state.cyclone.isInvest ? 'INVEST' : cat.shortName} - ${state.cyclone.intensity.toFixed(0)}KT`;
         const centerEnvP = getPressureAt(state.cyclone.lon, state.cyclone.lat, state.pressureSystems);
         const pVal = windToPressure(state.cyclone.intensity, state.cyclone.circulationSize, state.cyclone.basin, centerEnvP);
         
@@ -1283,7 +1414,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const cycloneInfo = {
                 basin: basinId,
                 month: state.currentMonth,
-                year: new Date().getFullYear()
+                year: new Date().getFullYear(),
+                investNumber: state.cyclone.investNumber
             };
             
             // 生成最佳路径文本
@@ -1337,6 +1469,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 else statusText = `TD ${cycloneNum}`;
             }
             // 更新 UI
+            statusText = getCycloneStatusText(state.cyclone, peakWind, cycloneNum);
             document.getElementById('status').textContent = statusText;
             document.getElementById('map-info-box').classList.add('hidden');
             
@@ -1354,8 +1487,11 @@ document.addEventListener('DOMContentLoaded', () => {
             siteLatInput.disabled = false;
 
             // 4. 创建最终统计对象 (使用 basinCode 组合编号, 如 "WP 01")
+            const finalNumberLabel = (state.cyclone.investStatus !== 'upgraded' && (state.cyclone.investDisplayId || state.cyclone.investId))
+                ? (state.cyclone.investDisplayId || state.cyclone.investId)
+                : `${basinCode} ${cycloneNumStr}`;
             const finalStats = {
-                number: `${basinCode} ${cycloneNumStr}`,
+                number: finalNumberLabel,
                 peakWind: Math.round(peakWind),
                 minPressure: Math.round(minPressure),
                 ace: state.cyclone.ace.toFixed(2),
@@ -1388,7 +1524,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const peakIntensityKt = Math.round(peakWind);
                 
                 // 历史列表显示的名称
-                const historyName = `${statusText} (${basinCode} ${cycloneNumStr}) - T+${totalHours}h, Peak ${peakIntensityKt}kt`;
+                const historyName = `${statusText} (${finalNumberLabel}) - T+${totalHours}h, Peak ${peakIntensityKt}kt`;
                 const cycloneClone = { ...state.cyclone };
                 const satCacheRef = cycloneClone.satelliteCache;
                 delete cycloneClone.satelliteCache;
@@ -1412,10 +1548,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }        // [修改] 传递 GlobalTemp 到模型
         const wasNamed = state.cyclone.named;
+        const wasInvest = !!state.cyclone.isInvest;
+        const previousInvestStatus = state.cyclone.investStatus;
         state.pressureSystems = updatePressureSystems(state.pressureSystems, state.cyclone.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.cyclone = updateCycloneState(state.cyclone, state.pressureSystems, state.frontalZone, state.world, state.currentMonth, state.GlobalTemp, state.GlobalShear, state.nextNameIndex);
         updatePagasaNaming();
+        refreshInvestOutlook(wasInvest !== !!state.cyclone.isInvest || previousInvestStatus !== state.cyclone.investStatus);
         updateImpactState(state.impactState, state.cyclone);
         state.cyclone.currentMonth = state.currentMonth;
         if (state.cyclone.status === 'active') {
@@ -1444,7 +1583,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 获取名字 (如果没有名字显示编号)
             const cycloneNum = String(state.simulationCount).padStart(2, '0');
-            const displayName = state.cyclone.name ? state.cyclone.name.toUpperCase() : `SYSTEM ${cycloneNum}`;
+            const displayName = getCycloneHeadlineName(state.cyclone, cycloneNum);
             const currentBasinId = basinSelector.value; 
 
             let stormTerm = "HURRICANE";
@@ -1462,7 +1601,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.hasTriggeredCat5News = true;
             
             const cycloneNum = String(state.simulationCount).padStart(2, '0');
-            const displayName = state.cyclone.name ? state.cyclone.name.toUpperCase() : `SYSTEM ${cycloneNum}`;
+            const displayName = getCycloneHeadlineName(state.cyclone, cycloneNum);
             const currentBasinId = basinSelector.value;
 
             // 术语区分：西太叫“超强台风”，其他叫“五级飓风”
@@ -1492,7 +1631,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // 可选：在控制台或界面给出一个小的视觉提示
                     console.log(`Alert: Cyclone entered 400km radius (${Math.round(dist)}km)`);
 const cycloneNum = String(state.simulationCount).padStart(2, '0');
-                    const displayName = state.cyclone.name ? state.cyclone.name.toUpperCase() : `SYSTEM ${cycloneNum}`;
+                    const displayName = getCycloneHeadlineName(state.cyclone, cycloneNum);
                     const siteName = state.siteName ? state.siteName.toUpperCase() : "OBSERVATION POST";
 
                     // 构建标题 HTML (红色警报风格)
@@ -1587,7 +1726,9 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         state.warningAdvisory = { active: [], signature: '', issuedHour: null };
         state.lastWarningBannerSignature = '';
         state.lastParBannerSignature = '';
+        state.lastInvestBannerSignature = '';
         updateImpactPanel();
+        updateInvestPanel();
         updateWarningPanel();
         state.pressureHistory = [];
         state.isSiteSelected = false;
@@ -1636,11 +1777,32 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         // [修改] 传递 GlobalTemp 到模型
         state.cyclone = initializeCyclone(state.world, state.currentMonth, selectedBasin, state.GlobalTemp, state.GlobalShear, state.customLon, state.customLat); 
-        state.cyclone.track.push([state.cyclone.lon, state.cyclone.lat, state.cyclone.intensity, false, false, state.cyclone.circulationSize, state.cyclone.isSubtropical]);
+        assignInvestDesignation(state.cyclone, selectedBasin);
+        state.cyclone.track.push([
+            state.cyclone.lon,
+            state.cyclone.lat,
+            state.cyclone.intensity,
+            false,
+            false,
+            state.cyclone.circulationSize,
+            state.cyclone.isSubtropical,
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            null,
+            state.cyclone.ohcKjCm2 || 0,
+            0,
+            'none',
+            state.cyclone.investId || '',
+            state.cyclone.formationChance48h || 0,
+            state.cyclone.formationChance7d || 0,
+            !!state.cyclone.isInvest
+        ]);
         state.pressureSystems = initializePressureSystems(state.cyclone, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         
         state.pathForecasts = generatePathForecasts(state.cyclone, state.pressureSystems, checkLandWrapper, state.GlobalTemp, state.GlobalShear);
+        refreshInvestOutlook(true);
         refreshWarningAdvisory(true);
         updateToggleButtonVisual(togglePressureButton, state.showPressureField);
         updateToggleButtonVisual(toggleWindRadiiButton, state.showWindRadii);
@@ -3014,8 +3176,9 @@ contentArea.innerHTML = `
 
             // 2. 设置滚动新闻内容
             const ticker = document.getElementById('newsTicker');
-            const name = (state.cyclone.name || "UNNAMED").toUpperCase();
-            const catName = getEnglishCategoryName(
+            const cycloneNum = String(state.simulationCount).padStart(2, '0');
+            const name = getCycloneHeadlineName(state.cyclone, cycloneNum);
+            const catName = state.cyclone.isInvest ? 'INVEST DISTURBANCE' : getEnglishCategoryName(
                 state.cyclone.intensity, 
                 state.cyclone.isExtratropical, 
                 state.cyclone.isSubtropical,

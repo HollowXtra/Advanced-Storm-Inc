@@ -1,6 +1,6 @@
 {
   "name": "advanced-storm-inc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop Windows build of the STORM_INC tropical cyclone simulator.",
   "main": "electron/main.cjs",
   "author": "EnceladusCat",

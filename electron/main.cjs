@@ -127,6 +127,7 @@ function createMainWindow() {
               && !!document.getElementById('damageCounter')
               && !!document.getElementById('deathCounter')
               && !!document.getElementById('rainRateCounter')
+              && !!document.getElementById('investIdCounter')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
               && !!document.getElementById('toggleSteeringButton')
@@ -145,6 +146,7 @@ function createMainWindow() {
               hasDamageCounter: !!document.getElementById('damageCounter'),
               hasDeathCounter: !!document.getElementById('deathCounter'),
               hasRainCounter: !!document.getElementById('rainRateCounter'),
+              hasInvestPanel: !!document.getElementById('investIdCounter') && !!document.getElementById('investChance7Counter'),
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),
               hasSteeringToggle: !!document.getElementById('toggleSteeringButton'),

@@ -6,6 +6,7 @@ import { NAME_LISTS, getSST, getPressureAt, normalizeLongitude, calculateDistanc
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { calculateBackgroundHumidity } from './visualization.js';
 import { calculateCycloneRainfall, calculateOceanHeatContent } from './environment-model.js';
+import { calculateInvestOutlook } from './invest-system.js';
 
 const basinConfig = {
     'WPAC': { lon: { min: 100, max: 180 }, lat: { min: 5, max: 25 } },  // 西北太平洋
@@ -405,6 +406,19 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         rainShieldKm: 0,
         environmentHumidity: 74,
         centralPressure: 1010,
+        isInvest: true,
+        investId: '',
+        investDisplayId: '',
+        investNumber: null,
+        investStatus: 'open',
+        investOpenedHour: 0,
+        investClosedHour: null,
+        investOrganization: 0.24 + Math.random() * 0.18,
+        closedLow: false,
+        formationChance48h: 10,
+        formationChance7d: 20,
+        investChanceCategory: 'LOW',
+        modelGuidanceAvailable: true,
         inPAR: false,
         pagasaName: '',
         parEnteredHour: null,
@@ -1074,6 +1088,27 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     updatedCyclone.stormStructure = calculateStormStructure(updatedCyclone, totalShear);
     updatedCyclone.rmwKm = updatedCyclone.stormStructure.rmwKm;
 
+    const investOutlook = calculateInvestOutlook(updatedCyclone, {
+        sst,
+        ohcKjCm2: updatedCyclone.ohcKjCm2,
+        shearKt: totalShear,
+        humidity: updatedCyclone.environmentHumidity,
+        isLand: isOverLand,
+        isNearLand
+    });
+    updatedCyclone.investOrganization = investOutlook.organization;
+    updatedCyclone.closedLow = investOutlook.closedLow;
+    updatedCyclone.formationChance48h = investOutlook.formationChance48h;
+    updatedCyclone.formationChance7d = investOutlook.formationChance7d;
+    updatedCyclone.investChanceCategory = investOutlook.chanceCategory.code;
+    updatedCyclone.modelGuidanceAvailable = investOutlook.modelGuidanceAvailable;
+
+    if (updatedCyclone.isInvest && !updatedCyclone.isExtratropical && updatedCyclone.intensity >= 24 && investOutlook.closedLow) {
+        updatedCyclone.isInvest = false;
+        updatedCyclone.investStatus = 'upgraded';
+        updatedCyclone.investClosedHour = updatedCyclone.age;
+    }
+
     // --- Wind Radii Calculation (Preserved) ---
     const RMW_KM = 5 + updatedCyclone.circulationSize * 0.15; 
     const MAX_SEARCH_KM = 900; 
@@ -1142,7 +1177,11 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         Math.round(currentCentralPressure),
         updatedCyclone.ohcKjCm2,
         Math.round(updatedCyclone.rainTotalMm || 0),
-        updatedCyclone.ercState || 'none'
+        updatedCyclone.ercState || 'none',
+        updatedCyclone.investId || '',
+        updatedCyclone.formationChance48h || 0,
+        updatedCyclone.formationChance7d || 0,
+        !!updatedCyclone.isInvest
     ]);
 
     if (updatedCyclone.intensity < 17 || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
@@ -1151,6 +1190,9 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     
     if (!updatedCyclone.named && updatedCyclone.intensity >= 34 && !updatedCyclone.isExtratropical) {
         updatedCyclone.named = true;
+        updatedCyclone.isInvest = false;
+        updatedCyclone.investStatus = 'upgraded';
+        updatedCyclone.investClosedHour = updatedCyclone.investClosedHour ?? updatedCyclone.age;
         const basinKey = updatedCyclone.basin || 'WPAC';
         const list = NAME_LISTS[basinKey] || NAME_LISTS['WPAC'];
         const safeIndex = nameIndex % list.length;

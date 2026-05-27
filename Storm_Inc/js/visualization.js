@@ -1022,6 +1022,85 @@ function drawStormGlyph(container, projection, cyclone) {
     glyph.attr("transform", `translate(${cx},${cy})`);
     glyph.selectAll("*").remove();
 
+    if (cyclone.isInvest) {
+        const organization = Math.max(0, Math.min(1, Number(cyclone.investOrganization || 0.25)));
+        const investRadius = Math.max(9, Math.min(23, radius * (0.72 + organization * 0.28)));
+        const pulse = Math.sin((cyclone.age || 0) * 0.35 + organization * 3) * 0.5 + 0.5;
+        const investLabel = cyclone.investDisplayId || cyclone.investId || 'INVEST';
+
+        glyph.append("circle")
+            .attr("r", investRadius + pulse * 1.8)
+            .attr("fill", "rgba(168, 85, 247, 0.10)")
+            .attr("stroke", "#c084fc")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "4 3")
+            .attr("stroke-opacity", 0.72)
+            .attr("vector-effect", "non-scaling-stroke")
+            .style("filter", "drop-shadow(0 0 6px rgba(192,132,252,0.45))");
+
+        glyph.append("circle")
+            .attr("r", Math.max(3.8, investRadius * (0.24 + organization * 0.18)))
+            .attr("fill", "none")
+            .attr("stroke", "#67e8f9")
+            .attr("stroke-width", 1.2)
+            .attr("stroke-opacity", 0.78)
+            .attr("vector-effect", "non-scaling-stroke");
+
+        for (let i = 0; i < 5; i++) {
+            const angle = phase + i * (Math.PI * 2 / 5);
+            const convectiveRadius = investRadius * (0.45 + ((i % 2) * 0.18)) * (0.75 + organization * 0.35);
+            glyph.append("circle")
+                .attr("cx", Math.cos(angle) * convectiveRadius)
+                .attr("cy", Math.sin(angle) * convectiveRadius)
+                .attr("r", 1.9 + organization * 2.2 + (i % 2) * 0.8)
+                .attr("fill", i % 2 === 0 ? "#e0f2fe" : "#c084fc")
+                .attr("fill-opacity", 0.34 + organization * 0.36);
+        }
+
+        glyph.append("line")
+            .attr("x1", -investRadius * 0.78)
+            .attr("y1", -investRadius * 0.78)
+            .attr("x2", investRadius * 0.78)
+            .attr("y2", investRadius * 0.78)
+            .attr("stroke", "#f8fafc")
+            .attr("stroke-width", 1.1)
+            .attr("stroke-opacity", 0.62)
+            .attr("vector-effect", "non-scaling-stroke");
+
+        glyph.append("line")
+            .attr("x1", -investRadius * 0.78)
+            .attr("y1", investRadius * 0.78)
+            .attr("x2", investRadius * 0.78)
+            .attr("y2", -investRadius * 0.78)
+            .attr("stroke", "#f8fafc")
+            .attr("stroke-width", 1.1)
+            .attr("stroke-opacity", 0.62)
+            .attr("vector-effect", "non-scaling-stroke");
+
+        glyph.append("circle")
+            .attr("class", "storm-center-dot")
+            .attr("r", 2.8)
+            .attr("fill", "#c084fc")
+            .attr("stroke", "#ffffff")
+            .attr("stroke-width", 0.9)
+            .attr("vector-effect", "non-scaling-stroke");
+
+        glyph.append("text")
+            .attr("x", 0)
+            .attr("y", investRadius + 11)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#f5d0fe")
+            .attr("font-size", "9px")
+            .attr("font-weight", 800)
+            .attr("font-family", "monospace")
+            .attr("paint-order", "stroke")
+            .attr("stroke", "#020617")
+            .attr("stroke-width", 3)
+            .text(investLabel);
+
+        return;
+    }
+
     const line = d3.line()
         .x(d => d.x)
         .y(d => d.y)

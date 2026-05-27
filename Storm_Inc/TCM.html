@@ -1138,6 +1138,12 @@
                     <button id="toggleHistoryButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-cyan-400 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="History">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                     </button>
+                    <button id="saveGameButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-emerald-300 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="Save Game">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                    </button>
+                    <button id="loadGameButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-amber-300 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="Load Saves">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </button>
                     <div class="h-6 w-px bg-white/10 mx-1"></div> <button id="generateJTWCButton" class="hidden relative group bg-red-900/40 border border-red-500/50 text-red-400 hover:bg-red-600 hover:text-white w-24 h-8 rounded-lg flex items-center justify-center transition-all text-[10px] font-bold tracking-wider uppercase shadow-[0_0_15px_rgba(220,38,38,0.3)] animate-pulse" title="Generate JTWC Graphic">
                         <i class="fa-solid fa-file-image mr-2"></i> ICWC
                         <span class="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none border border-red-500/30">
@@ -1169,6 +1175,34 @@
                 <textarea id="history-best-track-data" readonly class="w-full h-24 bg-[#050505] text-slate-400 p-2 border border-white/10 font-mono text-[9px] outline-none mb-2"></textarea>
                 <button id="downloadHistoryTrackButton" class="w-full bg-cyan-900/50 hover:bg-cyan-900 text-cyan-200 border border-cyan-500/30 text-xs font-bold py-2 transition uppercase tracking-wider" data-t="download_log">Download Log (.txt)</button>
             </div>
+        </div>
+    </div>
+    <div id="saveModal" class="hidden fixed inset-0 z-[140] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-[#0a0a0c] w-full max-w-2xl rounded-none border border-white/20 shadow-2xl flex flex-col max-h-[82vh] relative">
+            <div class="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-400"></div>
+            <div class="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-amber-400"></div>
+            <div class="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                <div>
+                    <h2 class="text-xl font-black text-white italic uppercase tracking-tight">Game Saves</h2>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Patch 1.0.3.1</p>
+                </div>
+                <button id="closeSaveModal" class="text-slate-500 hover:text-white transition-colors text-xl" title="Close Saves">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 border-b border-white/10 grid gap-2 sm:grid-cols-3">
+                <button id="saveCurrentGameButton" class="bg-emerald-900/45 hover:bg-emerald-800 border border-emerald-500/30 text-emerald-100 text-[10px] font-bold py-2 uppercase tracking-wider transition">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i>Save Current
+                </button>
+                <button id="importSaveButton" class="bg-cyan-900/45 hover:bg-cyan-800 border border-cyan-500/30 text-cyan-100 text-[10px] font-bold py-2 uppercase tracking-wider transition">
+                    <i class="fa-solid fa-file-import mr-2"></i>Import Save
+                </button>
+                <button id="refreshSaveListButton" class="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 text-[10px] font-bold py-2 uppercase tracking-wider transition">
+                    <i class="fa-solid fa-rotate mr-2"></i>Refresh
+                </button>
+                <input id="saveImportInput" type="file" accept="application/json,.json" class="hidden">
+            </div>
+            <div id="saveSlotList" class="p-4 space-y-2 overflow-y-auto custom-scrollbar"></div>
         </div>
     </div>
     <div id="jtwcModal" class="hidden fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">

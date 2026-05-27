@@ -112,6 +112,7 @@ function createMainWindow() {
           window.addEventListener('error', (event) => smokeErrors.push(event.message || String(event.error || event)));
           window.addEventListener('unhandledrejection', (event) => smokeErrors.push(String(event.reason || event)));
           let clickedStart = false;
+          let clickedSave = false;
 
           const check = () => {
             const generateButton = document.getElementById('generateButton');
@@ -143,6 +144,9 @@ function createMainWindow() {
               && !!document.getElementById('damageCounter')
               && !!document.getElementById('deathCounter')
               && !!document.getElementById('rainRateCounter')
+              && !!document.getElementById('saveGameButton')
+              && !!document.getElementById('loadGameButton')
+              && !!document.getElementById('saveModal')
               && !!document.getElementById('investIdCounter')
               && !!document.getElementById('yearSelector')
               && !!document.getElementById('multiplayerButton')
@@ -156,6 +160,18 @@ function createMainWindow() {
               && document.querySelectorAll('.city-label').length > 0
               && document.querySelectorAll('.layer-cyclone circle').length > 0
             );
+            const savedSlots = (() => {
+              try {
+                return JSON.parse(localStorage.getItem('tcs_game_saves_v1') || '[]');
+              } catch (_error) {
+                return [];
+              }
+            })();
+
+            if (runSimulationSmoke && simulationReady && !clickedSave) {
+              document.getElementById('saveGameButton')?.click();
+              clickedSave = true;
+            }
 
             const result = {
               title: document.title,
@@ -170,6 +186,9 @@ function createMainWindow() {
               hasDamageCounter: !!document.getElementById('damageCounter'),
               hasDeathCounter: !!document.getElementById('deathCounter'),
               hasRainCounter: !!document.getElementById('rainRateCounter'),
+              hasGameSaves: !!document.getElementById('saveGameButton') && !!document.getElementById('loadGameButton') && !!document.getElementById('saveModal'),
+              clickedSave,
+              saveSlotCount: Array.isArray(savedSlots) ? savedSlots.length : 0,
               hasInvestPanel: !!document.getElementById('investIdCounter') && !!document.getElementById('investChance7Counter'),
               hasYearSelector: !!document.getElementById('yearSelector'),
               selectedYear: document.getElementById('yearSelector')?.value || '',
@@ -186,7 +205,8 @@ function createMainWindow() {
               smokeErrors
             };
 
-            const ready = baseReady && simulationReady && smokeErrors.length === 0;
+            const saveReady = !runSimulationSmoke || (clickedSave && Array.isArray(savedSlots) && savedSlots.length > 0);
+            const ready = baseReady && simulationReady && saveReady && smokeErrors.length === 0;
 
             if (ready || Date.now() - startedAt > 15000) {
               resolve({ ...result, ready });

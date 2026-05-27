@@ -104,6 +104,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyHeader = historyModal.querySelector('.border-b');
     const closeHistoryModal = document.getElementById('closeHistoryModal');
     const historyList = document.getElementById('historyList');
+    const saveGameButton = document.getElementById('saveGameButton');
+    const loadGameButton = document.getElementById('loadGameButton');
+    const saveModal = document.getElementById('saveModal');
+    const closeSaveModal = document.getElementById('closeSaveModal');
+    const saveSlotList = document.getElementById('saveSlotList');
+    const saveCurrentGameButton = document.getElementById('saveCurrentGameButton');
+    const importSaveButton = document.getElementById('importSaveButton');
+    const refreshSaveListButton = document.getElementById('refreshSaveListButton');
+    const saveImportInput = document.getElementById('saveImportInput');
     const bestTrackContainer = document.getElementById('best-track-container');
     const bestTrackData = document.getElementById('best-track-data');
     const historyBestTrackContainer = document.getElementById('history-best-track-container');
@@ -1146,6 +1155,359 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
+    const GAME_SAVE_PATCH_VERSION = '1.0.3.1';
+    const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
+    const MAX_GAME_SAVE_SLOTS = 8;
+
+    function cloneSerializable(value, fallback = null) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (_error) {
+            return fallback;
+        }
+    }
+
+    function getGameSaveSlots() {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(GAME_SAVE_STORAGE_KEY) || '[]');
+            return Array.isArray(parsed) ? parsed.filter(slot => slot && slot.id && slot.state?.cyclone) : [];
+        } catch (_error) {
+            return [];
+        }
+    }
+
+    function persistGameSaveSlots(slots) {
+        localStorage.setItem(GAME_SAVE_STORAGE_KEY, JSON.stringify(slots.slice(0, MAX_GAME_SAVE_SLOTS)));
+    }
+
+    function cleanCycloneForSave(cyclone) {
+        const copy = { ...(cyclone || {}) };
+        delete copy.satelliteCache;
+        return cloneSerializable(copy, {});
+    }
+
+    function getSaveTitle(cyclone = state.cyclone) {
+        const fallbackNumber = String(state.simulationCount || 1).padStart(2, '0');
+        const basin = cyclone?.basin || basinSelector?.value || 'WPAC';
+        const name = getCycloneHeadlineName(cyclone, fallbackNumber);
+        const age = Math.max(0, Math.round(Number(cyclone?.age || 0)));
+        return `${basin} ${name} T+${age}H`;
+    }
+
+    function buildGameSaveSnapshot(source = 'manual') {
+        if (!state.cyclone || !Array.isArray(state.cyclone.track) || state.cyclone.track.length === 0) {
+            return null;
+        }
+
+        const cyclone = cleanCycloneForSave(state.cyclone);
+        return {
+            id: `save-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            schemaVersion: 1,
+            patchVersion: GAME_SAVE_PATCH_VERSION,
+            source,
+            title: getSaveTitle(cyclone),
+            savedAt: new Date().toISOString(),
+            state: {
+                cyclone,
+                pressureSystems: cloneSerializable(state.pressureSystems, { upper: [], lower: [] }),
+                pressureHistory: cloneSerializable(state.pressureHistory, []),
+                frontalZone: cloneSerializable(state.frontalZone, {}),
+                pathForecasts: cloneSerializable(state.pathForecasts, []),
+                currentMonth: state.currentMonth,
+                currentYear: state.currentYear,
+                simulationSpeed: state.simulationSpeed,
+                wasRunning: !!state.simulationInterval && !state.isPaused,
+                isPaused: !!state.isPaused,
+                showIntensityChart: !!state.showIntensityChart,
+                showPressureField: !!state.showPressureField,
+                showHumidityField: !!state.showHumidityField,
+                showPathForecast: !!state.showPathForecast,
+                showWindRadii: !!state.showWindRadii,
+                showPathPoints: !!state.showPathPoints,
+                showWindField: !!state.showWindField,
+                showSteeringCurrents: !!state.showSteeringCurrents,
+                GlobalTemp: state.GlobalTemp,
+                GlobalShear: state.GlobalShear,
+                siteName: state.siteName,
+                siteLon: state.siteLon,
+                siteLat: state.siteLat,
+                customLon: state.customLon,
+                customLat: state.customLat,
+                siteHistory: cloneSerializable(state.siteHistory, []),
+                impactState: cloneSerializable(state.impactState, createImpactState()),
+                warningAdvisory: cloneSerializable(state.warningAdvisory, { active: [], signature: '', issuedHour: null }),
+                currentSiteData: cloneSerializable(state.currentSiteData, null),
+                hasAlerted: !!state.hasAlerted,
+                hasTriggeredCat1News: !!state.hasTriggeredCat1News,
+                hasTriggeredCat5News: !!state.hasTriggeredCat5News,
+                lastWarningBannerSignature: state.lastWarningBannerSignature || '',
+                lastParBannerSignature: state.lastParBannerSignature || '',
+                lastInvestBannerSignature: state.lastInvestBannerSignature || '',
+                nextNameIndex: state.nextNameIndex,
+                nextPagasaNameIndex: state.nextPagasaNameIndex,
+                nextInvestNumbers: cloneSerializable(state.nextInvestNumbers, {}),
+                simulationCount: state.simulationCount,
+                lastBasin: state.lastBasin || cyclone.basin || basinSelector?.value || 'WPAC',
+                lastFinalStats: cloneSerializable(state.lastFinalStats, null),
+                isSiteSelected: !!state.isSiteSelected
+            }
+        };
+    }
+
+    function saveCurrentGame(source = 'manual', quiet = false) {
+        const snapshot = buildGameSaveSnapshot(source);
+        if (!snapshot) {
+            if (!quiet) alert('Start or load a storm before saving.');
+            return null;
+        }
+
+        try {
+            const slots = getGameSaveSlots().filter(slot => slot.id !== snapshot.id);
+            slots.unshift(snapshot);
+            persistGameSaveSlots(slots);
+            renderSaveSlots();
+            if (!quiet) {
+                document.getElementById('status').textContent = `SAVE CREATED: ${snapshot.title}`;
+            }
+            return snapshot;
+        } catch (error) {
+            console.error('Unable to save game:', error);
+            if (!quiet) alert('Unable to save. Browser storage may be full.');
+            return null;
+        }
+    }
+
+    function renderSaveSlots() {
+        if (!saveSlotList) return;
+        const slots = getGameSaveSlots();
+        saveSlotList.innerHTML = '';
+
+        if (slots.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'border border-white/10 bg-white/5 p-4 text-center text-xs font-mono text-slate-500 uppercase tracking-widest';
+            empty.textContent = 'No saves yet';
+            saveSlotList.appendChild(empty);
+            return;
+        }
+
+        slots.forEach(slot => {
+            const row = document.createElement('div');
+            row.className = 'grid gap-3 border border-white/10 bg-white/5 p-3 sm:grid-cols-[1fr_auto] sm:items-center';
+
+            const info = document.createElement('div');
+            const title = document.createElement('div');
+            title.className = 'text-sm font-bold text-white';
+            title.textContent = slot.title || 'Unnamed save';
+            const meta = document.createElement('div');
+            meta.className = 'mt-1 text-[10px] font-mono uppercase tracking-wider text-slate-500';
+            const date = slot.savedAt ? new Date(slot.savedAt).toLocaleString() : 'Unknown time';
+            meta.textContent = `${slot.patchVersion || 'unknown'} | ${date}`;
+            info.append(title, meta);
+
+            const actions = document.createElement('div');
+            actions.className = 'flex flex-wrap gap-2';
+            [
+                ['load', 'Load', 'bg-cyan-900/50 hover:bg-cyan-800 text-cyan-100 border-cyan-500/30'],
+                ['export', 'Export', 'bg-emerald-900/45 hover:bg-emerald-800 text-emerald-100 border-emerald-500/30'],
+                ['delete', 'Delete', 'bg-red-950/55 hover:bg-red-900 text-red-100 border-red-500/30']
+            ].forEach(([action, label, classes]) => {
+                const button = document.createElement('button');
+                button.className = `border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition ${classes}`;
+                button.dataset.saveAction = action;
+                button.dataset.saveId = slot.id;
+                button.textContent = label;
+                actions.appendChild(button);
+            });
+
+            row.append(info, actions);
+            saveSlotList.appendChild(row);
+        });
+    }
+
+    function openSaveManager() {
+        renderSaveSlots();
+        saveModal?.classList.remove('hidden');
+    }
+
+    function downloadJson(data, filename) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    function exportSaveSlot(saveId) {
+        const slot = getGameSaveSlots().find(item => item.id === saveId);
+        if (!slot) return;
+        const safeTitle = (slot.title || 'storm-inc-save').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        downloadJson(slot, `${safeTitle || 'storm-inc-save'}-${GAME_SAVE_PATCH_VERSION}.json`);
+    }
+
+    function deleteSaveSlot(saveId) {
+        const slots = getGameSaveSlots().filter(slot => slot.id !== saveId);
+        persistGameSaveSlots(slots);
+        renderSaveSlots();
+    }
+
+    function importGameSaveFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const imported = JSON.parse(String(reader.result || ''));
+                if (!imported?.state?.cyclone?.track?.length) {
+                    throw new Error('Invalid save file.');
+                }
+                imported.id = `import-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+                imported.importedAt = new Date().toISOString();
+                imported.title = imported.title || getSaveTitle(imported.state.cyclone);
+                imported.patchVersion = imported.patchVersion || GAME_SAVE_PATCH_VERSION;
+                const slots = getGameSaveSlots();
+                slots.unshift(imported);
+                persistGameSaveSlots(slots);
+                renderSaveSlots();
+            } catch (error) {
+                console.error('Unable to import save:', error);
+                alert('That save file could not be imported.');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function restoreGameSave(saveId) {
+        const slot = getGameSaveSlots().find(item => item.id === saveId);
+        if (!slot?.state?.cyclone?.track?.length) return;
+
+        const saved = slot.state;
+        if (state.simulationInterval) {
+            clearInterval(state.simulationInterval);
+            state.simulationInterval = null;
+        }
+
+        selectedHistoryPointIndex = -1;
+        state.selectedHistoryCyclone = null;
+        state.cyclone = cloneSerializable(saved.cyclone, {});
+        state.pressureSystems = cloneSerializable(saved.pressureSystems, { upper: [], lower: [] });
+        state.pressureHistory = cloneSerializable(saved.pressureHistory, []);
+        state.frontalZone = cloneSerializable(saved.frontalZone, {});
+        state.pathForecasts = cloneSerializable(saved.pathForecasts, []);
+        state.currentMonth = Number(saved.currentMonth || state.cyclone.currentMonth || 7);
+        state.currentYear = normalizeSimulationYear(saved.currentYear || state.cyclone.currentYear || currentCalendarYear);
+        state.simulationSpeed = Number(saved.simulationSpeed || state.simulationSpeed || 200);
+        state.showIntensityChart = saved.showIntensityChart !== false;
+        state.showPressureField = !!saved.showPressureField;
+        state.showHumidityField = !!saved.showHumidityField;
+        state.showPathForecast = !!saved.showPathForecast;
+        state.showWindRadii = !!saved.showWindRadii;
+        state.showPathPoints = !!saved.showPathPoints;
+        state.showWindField = !!saved.showWindField;
+        state.showSteeringCurrents = !!saved.showSteeringCurrents;
+        state.GlobalTemp = Number(saved.GlobalTemp || state.GlobalTemp || 289);
+        state.GlobalShear = Number(saved.GlobalShear || state.GlobalShear || 100);
+        state.siteName = saved.siteName || '';
+        state.siteLon = saved.siteLon ?? null;
+        state.siteLat = saved.siteLat ?? null;
+        state.customLon = saved.customLon ?? null;
+        state.customLat = saved.customLat ?? null;
+        state.siteHistory = cloneSerializable(saved.siteHistory, []);
+        state.impactState = cloneSerializable(saved.impactState, createImpactState());
+        state.warningAdvisory = cloneSerializable(saved.warningAdvisory, { active: [], signature: '', issuedHour: null });
+        state.currentSiteData = cloneSerializable(saved.currentSiteData, null);
+        state.hasAlerted = !!saved.hasAlerted;
+        state.hasTriggeredCat1News = !!saved.hasTriggeredCat1News;
+        state.hasTriggeredCat5News = !!saved.hasTriggeredCat5News;
+        state.lastWarningBannerSignature = saved.lastWarningBannerSignature || '';
+        state.lastParBannerSignature = saved.lastParBannerSignature || '';
+        state.lastInvestBannerSignature = saved.lastInvestBannerSignature || '';
+        state.nextNameIndex = Number(saved.nextNameIndex || 0);
+        state.nextPagasaNameIndex = Number(saved.nextPagasaNameIndex || 0);
+        state.nextInvestNumbers = cloneSerializable(saved.nextInvestNumbers, {});
+        state.simulationCount = Number(saved.simulationCount || state.simulationCount || 1);
+        state.lastBasin = saved.lastBasin || state.cyclone.basin || 'WPAC';
+        state.lastFinalStats = cloneSerializable(saved.lastFinalStats, null);
+        state.isSiteSelected = !!saved.isSiteSelected;
+        state.cyclone.currentMonth = state.currentMonth;
+        state.cyclone.currentYear = state.currentYear;
+
+        const active = state.cyclone.status === 'active';
+        state.isPaused = active ? !saved.wasRunning : false;
+        if (!state.pathForecasts.length && active) {
+            state.pathForecasts = generatePathForecasts(state.cyclone, state.pressureSystems, checkLandWrapper, state.GlobalTemp, state.GlobalShear);
+        }
+
+        if (basinSelector) basinSelector.value = state.cyclone.basin || state.lastBasin || 'WPAC';
+        if (monthSelector) monthSelector.value = String(state.currentMonth);
+        if (yearSelector) yearSelector.value = String(state.currentYear);
+        if (globalTempSlider) globalTempSlider.value = String(state.GlobalTemp);
+        if (globalTempValue) globalTempValue.textContent = `${state.GlobalTemp}K`;
+        if (globalShearSlider) globalShearSlider.value = String(state.GlobalShear);
+        if (globalShearValue) globalShearValue.textContent = `${state.GlobalShear}`;
+        if (siteNameInput) siteNameInput.value = state.siteName || '';
+        if (siteLonInput) siteLonInput.value = state.siteLon ?? '';
+        if (siteLatInput) siteLatInput.value = state.siteLat ?? '';
+        if (customLonInput) customLonInput.value = state.customLon ?? '';
+        if (customLatInput) customLatInput.value = state.customLat ?? '';
+        if (showPathPointsCheckbox) showPathPointsCheckbox.checked = state.showPathPoints;
+
+        monthSelector.disabled = active;
+        if (yearSelector) yearSelector.disabled = active;
+        basinSelector.disabled = active;
+        globalTempSlider.disabled = active;
+        globalShearSlider.disabled = active;
+        siteNameInput.disabled = active;
+        customLonInput.disabled = active;
+        customLatInput.disabled = active;
+        siteLonInput.disabled = active;
+        siteLatInput.disabled = active;
+
+        setupCanvases();
+        document.getElementById('initial-message').classList.add('hidden');
+        document.getElementById('simulation-output').classList.remove('hidden');
+        document.getElementById('satellite-window').classList.toggle('hidden', !active);
+        document.getElementById('info-panel').classList.remove('hidden');
+        document.getElementById('map-info-box').classList.toggle('hidden', !active);
+        bestTrackContainer.classList.add('hidden');
+        saveModal?.classList.add('hidden');
+        hideGameMenu();
+
+        generateButton.innerHTML = '<span class="relative z-10 flex items-center justify-center gap-2"><i class="fa-solid fa-power-off"></i> RESTART</span>';
+        pauseButton.disabled = !active;
+        pauseButton.innerHTML = state.isPaused ? '<i class="fa-solid fa-play text-xs"></i>' : '<i class="fa-solid fa-pause text-xs"></i>';
+        updateToggleButtonVisual(togglePressureButton, state.showPressureField);
+        updateToggleButtonVisual(toggleHumidityButton, state.showHumidityField);
+        updateToggleButtonVisual(toggleWindFieldButton, state.showWindField);
+        updateToggleButtonVisual(toggleWindRadiiButton, state.showWindRadii);
+        updateToggleButtonVisual(togglePathButton, state.showPathForecast);
+        updateToggleButtonVisual(toggleSteeringButton, state.showSteeringCurrents);
+        updateStateSiteData();
+        updateInfoPanel();
+        updateMapInfoBox();
+        updateImpactPanel();
+        updateInvestPanel();
+        updateWarningPanel();
+        updateGameMenuState();
+        document.getElementById('status').textContent = `LOADED SAVE: ${slot.title || getSaveTitle(state.cyclone)}`;
+
+        if (active) {
+            requestRedraw();
+            if (!state.isPaused) {
+                state.simulationInterval = setInterval(updateSimulation, state.simulationSpeed);
+            }
+        } else {
+            drawFinalPath(mapSvg, mapProjection, state.cyclone, state.world, tooltip, state.siteName, state.siteLon, state.siteLat, state.showPathPoints, state.lastFinalStats, basinSelector.value, state.pressureSystems, state.showWindField);
+        }
+
+        if (state.showIntensityChart && state.cyclone.track?.length > 1) {
+            forecastContainer.classList.remove('hidden');
+            setTimeout(() => drawHistoricalIntensityChart(chartContainer, state.cyclone.track, tooltip, chartMode, basinSelector.value), 0);
+        }
+    }
+
     function updateToggleButtonVisual(button, isActive) {
         if (!button) return;
         if (isActive) {
@@ -2630,6 +2992,53 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     });
 
     downloadHistoryTrackButton.addEventListener('click', downloadHistoryTrack);
+
+    if (saveGameButton) {
+        saveGameButton.addEventListener('click', () => {
+            playClick();
+            saveCurrentGame();
+        });
+    }
+    if (loadGameButton) {
+        loadGameButton.addEventListener('click', () => {
+            playClick();
+            openSaveManager();
+        });
+    }
+    if (saveCurrentGameButton) {
+        saveCurrentGameButton.addEventListener('click', () => {
+            playClick();
+            saveCurrentGame();
+        });
+    }
+    if (refreshSaveListButton) {
+        refreshSaveListButton.addEventListener('click', () => {
+            playClick();
+            renderSaveSlots();
+        });
+    }
+    if (closeSaveModal) {
+        closeSaveModal.addEventListener('click', () => saveModal?.classList.add('hidden'));
+    }
+    if (importSaveButton) {
+        importSaveButton.addEventListener('click', () => saveImportInput?.click());
+    }
+    if (saveImportInput) {
+        saveImportInput.addEventListener('change', (event) => {
+            importGameSaveFile(event.target.files?.[0]);
+            event.target.value = '';
+        });
+    }
+    if (saveSlotList) {
+        saveSlotList.addEventListener('click', (event) => {
+            const button = event.target.closest('button[data-save-action]');
+            if (!button) return;
+            const saveId = button.dataset.saveId;
+            if (button.dataset.saveAction === 'load') restoreGameSave(saveId);
+            if (button.dataset.saveAction === 'export') exportSaveSlot(saveId);
+            if (button.dataset.saveAction === 'delete') deleteSaveSlot(saveId);
+        });
+    }
 
     // [新增] 设置菜单事件监听器
     settingsButton.addEventListener('click', () => {

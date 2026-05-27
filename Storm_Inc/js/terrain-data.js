@@ -2,6 +2,7 @@
  * terrain-data.js
  * 负责管理地形高程数据和陆地遮罩
  */
+import { getFictioniaLandStatus } from './fictionia-map.js';
 
 let elevationData = null; // 存储高程图像素数据 (RGBA)
 let landMaskData = null;  // 存储陆地遮罩像素数据 (Alpha channel only is enough, but we use RGBA)
@@ -109,6 +110,9 @@ export function getElevationAt(lon, lat) {
 // 获取陆地状态 (包含 isLand 和 isNearLand)
 // nearThresholdDeg: 近岸判定阈值，单位度。默认 0.2 度
 export function getLandStatus(lon, lat, nearThresholdDeg = 0.2) {
+    const fictioniaStatus = getFictioniaLandStatus(lon, lat, nearThresholdDeg);
+    if (fictioniaStatus.isLand || fictioniaStatus.isNearLand) return fictioniaStatus;
+
     if (!landMaskData) return { isLand: false, isNearLand: false };
 
     const { x: cx, y: cy } = getPixelCoords(lon, lat);

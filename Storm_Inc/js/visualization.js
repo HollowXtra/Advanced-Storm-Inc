@@ -7,6 +7,9 @@ import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
+import { FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_CREDIT, FICTIONIA_WATER_FEATURES, isFictioniaBasin } from './fictionia-map.js';
+
+const MAP_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
 
 function getSimulationYear(cyclone) {
     const parsed = parseInt(cyclone?.currentYear, 10);
@@ -27,7 +30,7 @@ function scoreCityLabel(city, cyclone = null) {
 }
 
 function getVisibleCities(projection, width, height, cyclone = null, limit = 28, spacing = 72) {
-    const candidates = CITY_DATA
+    const candidates = MAP_CITY_DATA
         .map(city => {
             const pos = projection([city.lon, city.lat]);
             if (!pos || pos[0] < 12 || pos[0] > width - 12 || pos[1] < 12 || pos[1] > height - 12) {
@@ -119,6 +122,60 @@ function drawWarningMarkers(container, projection, warnings = []) {
         .attr('stroke-width', 3)
         .attr('paint-order', 'stroke')
         .style('pointer-events', 'none');
+}
+
+function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible) {
+    const groups = staticLayer.selectAll('g.fictionia-details').data(visible ? [1] : []);
+    groups.exit().remove();
+    const group = groups.enter()
+        .append('g')
+        .attr('class', 'fictionia-details')
+        .merge(groups);
+
+    if (!visible) return;
+
+    group.selectAll('path.fictionia-county-line')
+        .data(FICTIONIA_COUNTY_LINES)
+        .join('path')
+        .attr('class', 'fictionia-county-line')
+        .attr('d', pathGenerator)
+        .attr('fill', 'none')
+        .attr('stroke', d => d.properties.kind === 'river' ? '#64748b' : '#8b949e')
+        .attr('stroke-width', d => d.properties.kind === 'river' ? 0.9 : 0.65)
+        .attr('stroke-opacity', d => d.properties.kind === 'river' ? 0.72 : 0.82)
+        .attr('vector-effect', 'non-scaling-stroke')
+        .style('pointer-events', 'none');
+
+    group.selectAll('path.fictionia-water')
+        .data(FICTIONIA_WATER_FEATURES)
+        .join('path')
+        .attr('class', 'fictionia-water')
+        .attr('d', pathGenerator)
+        .attr('fill', '#02072d')
+        .attr('stroke', '#f8fafc')
+        .attr('stroke-width', 0.75)
+        .attr('stroke-opacity', 0.95)
+        .attr('vector-effect', 'non-scaling-stroke')
+        .style('pointer-events', 'none');
+
+    group.selectAll('text.fictionia-credit')
+        .data([FICTIONIA_CREDIT])
+        .join('text')
+        .attr('class', 'fictionia-credit')
+        .attr('x', width - 18)
+        .attr('y', height - 18)
+        .attr('text-anchor', 'end')
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('font-size', 10)
+        .attr('font-weight', 800)
+        .attr('letter-spacing', 0)
+        .attr('fill', '#e2e8f0')
+        .attr('stroke', '#020617')
+        .attr('stroke-width', 3)
+        .attr('paint-order', 'stroke')
+        .attr('opacity', 0.86)
+        .style('pointer-events', 'none')
+        .text(d => d);
 }
 
 // [新增] 简单的伪随机噪声函数 (用于模拟大尺度湿度波动)
@@ -1279,7 +1336,8 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         remoteCyclone = null,
         onSiteClick = null,
         isPaused = false,
-        month = 8
+        month = 8,
+        basin = cyclone?.basin || remoteCyclone?.basin || null
     } = options;
 
     // 2. 初始化图层结构 (逻辑保持不变，但结构更清晰)
@@ -1328,6 +1386,8 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     const pathGenerator = d3.geoPath().projection(mapProjection);
 
     // 3. 气旋中心定位逻辑 (仅在 active 状态且有坐标时执行)
+    const activeBasin = basin || cyclone?.basin || remoteCyclone?.basin || null;
+    const showFictioniaDetails = isFictioniaBasin(activeBasin);
     const focusCyclone = (cyclone && cyclone.status === 'active' && isFinite(cyclone.lon))
         ? cyclone
         : ((remoteCyclone && isFinite(remoteCyclone.lon) && isFinite(remoteCyclone.lat)) ? remoteCyclone : null);
@@ -1359,7 +1419,13 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // B. 更新：每一帧都需要根据新的 Projection 更新坐标
     // 虽然有些消耗，但比 remove() + append() 快得多
     staticLayer.select(".graticule").attr("d", pathGenerator);
-    staticLayer.select(".land-group").selectAll(".land").attr("d", pathGenerator);
+    staticLayer.select(".land-group").selectAll(".land")
+        .attr("d", pathGenerator)
+        .style("fill", d => d.properties?.fictionia ? "#030303" : null)
+        .style("stroke", d => d.properties?.fictionia ? "#f8fafc" : null)
+        .style("stroke-width", d => d.properties?.fictionia ? 0.95 : null)
+        .style("stroke-opacity", d => d.properties?.fictionia ? 0.98 : null);
+    drawFictioniaDetails(staticLayer, pathGenerator, width, height, showFictioniaDetails);
 
     cityLabelLayer.selectAll("*").remove();
     if (showCityLabels) {
@@ -1679,6 +1745,7 @@ export function drawFinalPath(mapSvg, mapProjection, cyclone, world, tooltip, si
     showPathPoints,
     showWindField,
     month,
+    basin,
     siteHistory,
     siteData,
     onSiteClick
@@ -3198,7 +3265,7 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
 
     ctx.restore();
 
-    const cityDatabase = CITY_DATA
+    const cityDatabase = MAP_CITY_DATA
         .filter(city => (city.p || 0) >= 100000 || city.cap || city.wc)
         .map(city => ({ name: city.n.toUpperCase(), lat: city.lat, lon: city.lon, population: city.p || 0 }));
 
@@ -4360,7 +4427,7 @@ export function startNewsAnimation(canvas, worldData, cyclone, pathForecasts, ba
     const particles = [];
     
     // Common Vars
-    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
     const basinCode = basinMap[basin] || 'XX';
     const cycloneNumStr = String(simulationCount).padStart(2, '0');
     const displayName = cyclone.name ? cyclone.name.toUpperCase() : `${basinCode} ${cycloneNumStr}`;

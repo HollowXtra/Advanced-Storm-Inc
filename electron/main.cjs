@@ -144,6 +144,7 @@ function createMainWindow() {
               && !!document.getElementById('multiplayerButton')
               && !!document.getElementById('mpChatInput')
               && !!document.querySelector('#basinSelector option[value="MED"]')
+              && !!document.querySelector('#basinSelector option[value="FICT"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
               && !!document.getElementById('toggleSteeringButton')
@@ -168,6 +169,7 @@ function createMainWindow() {
               selectedYear: document.getElementById('yearSelector')?.value || '',
               hasMultiplayerPanel: !!document.getElementById('multiplayerButton') && !!document.getElementById('mpChatInput'),
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
+              hasFictioniaBasin: !!document.querySelector('#basinSelector option[value="FICT"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),

@@ -47,6 +47,7 @@ const WARM_POOLS = [
     { label: 'Ionian Sea medicane pocket', lon: 18, lat: 36.5, amp: 16, sx: 8, sy: 4 },
     { label: 'Levantine warm basin', lon: 30, lat: 34, amp: 14, sx: 8, sy: 4 },
     { label: 'central Mediterranean warm layer', lon: 13, lat: 36.5, amp: 12, sx: 9, sy: 4 },
+    { label: 'Fictionia warm current', lon: -92, lat: 17, amp: 30, sx: 14, sy: 8 },
     { label: 'Coral Sea', lon: 155, lat: -15, amp: 28, sx: 17, sy: 8 },
     { label: 'South Indian warm pool', lon: 75, lat: -13, amp: 32, sx: 24, sy: 9 }
 ];

@@ -18,6 +18,7 @@ import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, form
 import { buildInvestDisplayId, buildInvestId, classifyInvestChance } from './invest-system.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
 import { playClick, playToggleOn, playToggleOff, playStart, playError, playAlert, playUpgradeSound, playCat5Sound, toggleSFX } from './audio.js';
+import { addFictioniaToWorld, FICTIONIA_BASIN, FICTIONIA_CENTER } from './fictionia-map.js';
 
 const checkLandWrapper = (lon, lat) => {
     const status = getLandStatus(lon, lat);
@@ -256,6 +257,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalizeSimulationYear(cyclone?.currentYear ?? state.currentYear ?? currentCalendarYear);
     }
 
+    function formatLatitude(lat) {
+        const value = Number(lat) || 0;
+        return `${Math.abs(value).toFixed(1)}\u00B0${value < 0 ? 'S' : 'N'}`;
+    }
+
+    function formatLongitude(lon) {
+        const normalized = (((Number(lon) || 0) + 540) % 360) - 180;
+        return `${Math.abs(normalized).toFixed(1)}\u00B0${normalized < 0 ? 'W' : 'E'}`;
+    }
+
     let state = {
         simulationInterval: null,
         isPaused: false,
@@ -317,6 +328,22 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let mapSvg, mapProjection;
+    const basinViewCenters = {
+        WPAC: { lon: 140, lat: 15 },
+        EPAC: { lon: -122, lat: 14 },
+        NATL: { lon: -70, lat: 22 },
+        MED: { lon: 18, lat: 36 },
+        NIO: { lon: 82, lat: 15 },
+        SHEM: { lon: 165, lat: -12 },
+        SIO: { lon: 78, lat: -13 },
+        SATL: { lon: -30, lat: -18 },
+        [FICTIONIA_BASIN]: FICTIONIA_CENTER
+    };
+
+    function getBasinViewCenter(basin) {
+        return basinViewCenters[basin] || basinViewCenters.WPAC;
+    }
+
     let radarCanvas, radarCtx;
     if (savedSiteName) siteNameInput.value = savedSiteName;
     if (savedSiteLon) siteLonInput.value = savedSiteLon;
@@ -347,7 +374,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let term = "TYPHOON"; // 默认西太 (WPAC)
     
         // 美洲/大西洋 -> 飓风
-        if (['EPAC', 'NATL', 'SATL'].includes(basin)) {
+        if (['EPAC', 'NATL', 'SATL', 'FICT'].includes(basin)) {
             term = "HURRICANE";
         } 
         // 印度洋/南半球 -> 气旋
@@ -631,8 +658,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // B. 投影更新
         const { width, height } = mapContainer.node().getBoundingClientRect();
-        let initLon = 120;
-        let initLat = 15;
+        const selectedCenter = getBasinViewCenter(basinSelector?.value || 'WPAC');
+        let initLon = selectedCenter.lon;
+        let initLat = selectedCenter.lat;
         if (typeof state !== 'undefined' && state.siteLon != null && state.siteLat != null) {
             initLon = state.siteLon;
             initLat = state.siteLat;
@@ -710,8 +738,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- 初始化流程 ---
     
     // 1. 先加载地图数据
+    function redrawIdleBasinPreview() {
+        if (!mapSvg || !mapProjection || !state.world || state.cyclone?.status === 'active') return;
+        const { width, height } = mapContainer.node().getBoundingClientRect();
+        const center = getBasinViewCenter(basinSelector?.value || 'WPAC');
+        mapProjection.rotate([0, 0]).center([center.lon, center.lat]).translate([width / 2, height / 2]);
+        drawMap(mapSvg, mapProjection, state.world, { status: null, track: [] }, {
+            pressureSystems: state.pressureSystems,
+            showPressureField: state.showPressureField,
+            showHumidityField: state.showHumidityField,
+            showPathForecast: state.showPathForecast,
+            showWindRadii: state.showWindRadii,
+            siteName: state.siteName,
+            siteLon: state.siteLon,
+            siteLat: state.siteLat,
+            showPathPoints: state.showPathPoints,
+            showWindField: state.showWindField,
+            showSteeringCurrents: state.showSteeringCurrents,
+            remoteCyclone: getMultiplayerRemoteCyclone(),
+            basin: basinSelector?.value || 'WPAC'
+        });
+    }
+
     d3.json("js/world-f.json").then(data => {
-        state.world = topojson.feature(data, data.objects.collection);
+        state.world = addFictioniaToWorld(topojson.feature(data, data.objects.collection));
         
         // 2. 数据加载完，建立图层和投影
         setupCanvases();
@@ -756,7 +806,8 @@ document.addEventListener('DOMContentLoaded', () => {
             showPathPoints: state.showPathPoints,
             showWindField: state.showWindField,
             showSteeringCurrents: state.showSteeringCurrents,
-            remoteCyclone: getMultiplayerRemoteCyclone()
+            remoteCyclone: getMultiplayerRemoteCyclone(),
+            basin: basinSelector?.value || 'WPAC'
         });
     });
     // 封装折叠/展开函数
@@ -805,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let peakWind = 0;
         let minPressure = 1010;
         const currentBasin = basinSelector.value || 'WPAC';
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basinCode = basinMap[currentBasin] || 'XX';
         
         // 气旋编号 (如果没有 finalStats，使用当前计数)
@@ -1023,7 +1074,7 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
     }
 
     function formatBestTrack(track, cycloneInfo, simulationCount) {
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[cycloneInfo.basin] || 'WP';
         const cycloneNum = String(simulationCount).padStart(2, '0');
         const investNum = String(cycloneInfo.investNumber || 90).padStart(2, '0');
@@ -1035,9 +1086,10 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
 
             const dateString = `${currentDate.getUTCFullYear()}${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}${String(currentDate.getUTCDate()).padStart(2, '0')}${String(currentDate.getUTCHours()).padStart(2, '0')}`;
             const lat = `${Math.round(point[1] * 10)}N`;
-            let lonValue = point[0] > 180 ? 360 - point[0] : point[0];
-            let lonHemi = point[0] > 180 ? 'W' : 'E';
-            const lon = `${Math.round(lonValue * 10)}${lonHemi}`;
+            const normalizedLon = ((point[0] + 540) % 360) - 180;
+            const lonValue = Math.abs(normalizedLon);
+            const lonHemi = normalizedLon < 0 ? 'W' : 'E';
+            const lon = `${Math.round(lonValue * 10)}${lonHemi}`;
             const vmax = Math.round(point[2]);
             const circulationSize = point[5]; 
             let mslp;
@@ -1404,8 +1456,8 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
     function updateInfoPanel() {
         const cat = getCategory(state.cyclone.intensity, state.cyclone.isTransitioning, state.cyclone.isExtratropical, state.cyclone.isSubtropical);
         document.getElementById('simulationTime').textContent = `SIM T+${state.cyclone.age} 小时`;
-        document.getElementById('latitude').textContent = `${state.cyclone.lat.toFixed(1)}°N`;
-        document.getElementById('longitude').textContent = `${state.cyclone.lon.toFixed(1)}°E`;
+        document.getElementById('latitude').textContent = formatLatitude(state.cyclone.lat);
+        document.getElementById('longitude').textContent = formatLongitude(state.cyclone.lon);
         document.getElementById('intensity').textContent = `${knotsToKph(state.cyclone.intensity)} kph (${knotsToMph(state.cyclone.intensity)} mph)`;
         const centerEnvP = getPressureAt(state.cyclone.lon, state.cyclone.lat, state.pressureSystems);
         const centralPressure = windToPressure(state.cyclone.intensity, state.cyclone.circulationSize, state.cyclone.basin, centerEnvP);
@@ -1966,6 +2018,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             siteHistory: state.siteHistory,
             siteData: state.currentSiteData,
             remoteCyclone: getMultiplayerRemoteCyclone(),
+            basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
             onSiteClick: () => { 
                 state.isSiteSelected = !state.isSiteSelected;
                 requestRedraw();
@@ -2153,6 +2206,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     siteHistory: state.siteHistory,
                     siteData: siteDataToPass,
                     remoteCyclone: getMultiplayerRemoteCyclone(),
+                    basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
                     onSiteClick: onSiteClickCallback,
                     isPaused: state.isPaused,
                     // [新增] 删除回调
@@ -2374,7 +2428,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             return;
         }
 
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[basinSelector.value] || 'WP';
         const year = state.currentYear;
         const month = String(state.currentMonth).padStart(2, '0');
@@ -2490,8 +2544,8 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             
             document.getElementById('status').textContent = `查看历史: ${historyItem.name}`;
             document.getElementById('simulationTime').textContent = `总时长: ${selectedCyclone.age} 小时`;
-            document.getElementById('latitude').textContent = `${peak.lat.toFixed(1)}°N`;
-            document.getElementById('longitude').textContent = `${peak.lon.toFixed(1)}°E`;
+            document.getElementById('latitude').textContent = formatLatitude(peak.lat);
+            document.getElementById('longitude').textContent = formatLongitude(peak.lon);
             document.getElementById('intensity').textContent = `${knotsToKph(peak.intensity)} kph (${knotsToMph(peak.intensity)} mph)`;
             let displayP = peak.pressure;
             if (displayP === undefined || displayP === null) {
@@ -2577,6 +2631,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             state.customLat = null;
         }
     });
+    basinSelector.addEventListener('change', redrawIdleBasinPreview);
 
     copyTrackButton.addEventListener('click', () => {
         bestTrackData.select();
@@ -2722,6 +2777,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                      siteHistory: state.siteHistory,
                      siteData: state.currentSiteData,
                      remoteCyclone: getMultiplayerRemoteCyclone(),
+                     basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
                      onSiteClick: () => {
                          state.isSiteSelected = !state.isSiteSelected;
                          requestRedraw();

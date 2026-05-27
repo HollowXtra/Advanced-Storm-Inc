@@ -1,6 +1,9 @@
 import { CITY_DATA } from './city-data.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge } from './environment-model.js';
 import { calculateDistance } from './utils.js';
+import { FICTIONIA_CITIES } from './fictionia-map.js';
+
+const IMPACT_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
 
 export const WARNING_META = {
     EW_WARNING: { label: 'Extreme Wind Warning', shortLabel: 'EXT WIND', color: '#ff005d', priority: 6 },
@@ -97,7 +100,7 @@ export function updateImpactState(impactState, cyclone) {
     impactState.lastHour = currentHour;
     const recentImpacts = [];
 
-    CITY_DATA.forEach(city => {
+    IMPACT_CITY_DATA.forEach(city => {
         const wind = estimateWindAtCity(cyclone, city);
         const rain = estimateRainAtPoint(cyclone, city.lon, city.lat);
         const rainAddedMm = rain.rateMmHr * elapsedHours;
@@ -190,7 +193,7 @@ export function buildWarningAdvisory(cyclone, pathForecasts, previousAdvisory = 
 
     const warningMap = new Map();
 
-    CITY_DATA.forEach(city => {
+    IMPACT_CITY_DATA.forEach(city => {
         let best = null;
 
         for (let i = 0; i < primaryForecast.length; i++) {

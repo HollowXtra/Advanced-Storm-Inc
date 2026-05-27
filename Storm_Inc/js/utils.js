@@ -62,6 +62,12 @@ export const NAME_LISTS = {
         'Ianos', 'Zorbas', 'Numa', 'Rolf', 'Qendresa', 'Apollo', 'Daniel', 'Athena', 'Cassilda', 'Trixie',
         'Udine', 'Blas', 'Elpis', 'Helios', 'Minerva', 'Orion', 'Selene', 'Theron', 'Adria', 'Ionis',
         'Libeccio', 'Mistral', 'Sirocco', 'Vega'
+    ],
+
+    'FICT': [
+        'Aster', 'Brine', 'Caldera', 'Dovewind', 'Ember', 'Fable', 'Galeon', 'Harbor', 'Ivory', 'Juniper',
+        'Kestrel', 'Lucent', 'Morrow', 'Nimbus', 'Orchid', 'Palisade', 'Quartz', 'Riven', 'Solace', 'Talon',
+        'Umber', 'Velvet', 'Warden', 'Yarrow', 'Zephyr'
     ]
 };
 

@@ -7,6 +7,7 @@ import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { calculateBackgroundHumidity } from './visualization.js';
 import { calculateCycloneRainfall, calculateOceanHeatContent } from './environment-model.js';
 import { calculateInvestOutlook } from './invest-system.js';
+import { FICTIONIA_BASIN } from './fictionia-map.js';
 
 const basinConfig = {
     'WPAC': { lon: { min: 100, max: 180 }, lat: { min: 5, max: 25 } },  // 西北太平洋
@@ -16,7 +17,8 @@ const basinConfig = {
     'SHEM':  { lon: { min: 140,  max: 200 }, lat: { min: -15, max: -5 } },   // 南太平洋
     'SIO':  { lon: { min: 30,  max: 140 }, lat: { min: -15, max: -5 } },
     'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } },
-    'MED': { lon: { min: -5.5, max: 36 }, lat: { min: 31, max: 41.5 } }
+    'MED': { lon: { min: -5.5, max: 36 }, lat: { min: 31, max: 41.5 } },
+    [FICTIONIA_BASIN]: { lon: { min: -101, max: -86 }, lat: { min: 10, max: 24 } }
 };
 
 const genesisProfiles = {
@@ -60,6 +62,11 @@ const genesisProfiles = {
         { weight: 1.1, lon: 2.5, lonSpread: 4.5, lat: 39.0, latSpread: 1.6, peaks: [9, 10, 11], motion: { direction: 95, spread: 55, speed: 6.0 } },
         { weight: 0.8, lon: 28.5, lonSpread: 4.0, lat: 34.5, latSpread: 1.8, peaks: [9, 10, 1], motion: { direction: 55, spread: 44, speed: 7.5 } },
         { weight: 0.45, lon: 20.5, lonSpread: 5.0, lat: 35.2, latSpread: 2.0, peaks: [1, 2, 12], motion: { direction: 70, spread: 60, speed: 5.8 } }
+    ],
+    [FICTIONIA_BASIN]: [
+        { weight: 2.6, lon: -92.5, lonSpread: 4.2, lat: 15.5, latSpread: 3.0, peaks: [7, 8, 9], motion: { direction: 294, spread: 24, speed: 9.5 } },
+        { weight: 1.8, lon: -98.0, lonSpread: 3.0, lat: 12.5, latSpread: 2.4, peaks: [8, 9, 10], motion: { direction: 314, spread: 26, speed: 8.5 } },
+        { weight: 1.1, lon: -88.5, lonSpread: 2.2, lat: 20.0, latSpread: 2.8, peaks: [9, 10], motion: { direction: 282, spread: 30, speed: 10.5 } }
     ]
 };
 
@@ -203,7 +210,8 @@ function getInitialMotion(lon, lat, basin, profile = null) {
         SHEM: { direction: 248, spread: 24, speed: 10 },
         SIO: { direction: 248, spread: 24, speed: 10 },
         SATL: { direction: 232, spread: 28, speed: 8 },
-        MED: { direction: 88, spread: 48, speed: 6.5 }
+        MED: { direction: 88, spread: 48, speed: 6.5 },
+        [FICTIONIA_BASIN]: { direction: 300, spread: 30, speed: 9 }
     };
     const motion = profile?.motion || fallbackByBasin[basin] || fallbackByBasin.WPAC;
     const polewardBias = Math.abs(lat) > 18 ? (lat >= 0 ? 12 : -12) : 0;
@@ -484,6 +492,7 @@ export function initializePressureSystems(cyclone, month) {
     const baseLat = cyclone.lat; 
     const baseLon = cyclone.lon; 
     const isMedicane = isMedicaneBasin(cyclone);
+    const isFictionia = cyclone?.basin === FICTIONIA_BASIN;
 
     if (isMedicane) {
         tempAllSystems.push({
@@ -504,6 +513,29 @@ export function initializePressureSystems(cyclone, month) {
             strength: 10 + Math.random() * 8, baseStrength: 10 + Math.random() * 8,
             velocityX: 0.15 + Math.random() * 0.25, velocityY: (Math.random() - 0.5) * 0.12,
             oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.012 + Math.random() * 0.01, oscillationAmount: 0.18,
+            noiseLayers: []
+        });
+    }
+
+    if (isFictionia) {
+        tempAllSystems.push({
+            type: 'high',
+            x: -80 + (Math.random() - 0.5) * 8,
+            y: 27 + (Math.random() - 0.5) * 6,
+            baseSigmaX: 24 + Math.random() * 10, sigmaX: 24 + Math.random() * 10, sigmaY: 9 + Math.random() * 4,
+            strength: 15 + Math.random() * 7, baseStrength: 15 + Math.random() * 7,
+            velocityX: -0.06 + (Math.random() - 0.5) * 0.08, velocityY: (Math.random() - 0.5) * 0.08,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.012 + Math.random() * 0.01, oscillationAmount: 0.16,
+            noiseLayers: []
+        });
+        tempAllSystems.push({
+            type: 'low',
+            x: -126 + (Math.random() - 0.5) * 10,
+            y: 38 + (Math.random() - 0.5) * 5,
+            baseSigmaX: 17 + Math.random() * 8, sigmaX: 17 + Math.random() * 8, sigmaY: 8 + Math.random() * 4,
+            strength: -(10 + Math.random() * 8), baseStrength: -(10 + Math.random() * 8),
+            velocityX: 0.08 + Math.random() * 0.12, velocityY: -0.04 + (Math.random() - 0.5) * 0.08,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.015 + Math.random() * 0.01, oscillationAmount: 0.18,
             noiseLayers: []
         });
     }

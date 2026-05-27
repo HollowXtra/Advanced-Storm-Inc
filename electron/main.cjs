@@ -17,17 +17,19 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 const appRoot = path.resolve(__dirname, '..');
-const iconPath = path.join(appRoot, 'build', 'icon.ico');
+const iconRoot = app.isPackaged ? path.join(process.resourcesPath, 'build') : path.join(appRoot, 'build');
+const iconFile = process.platform === 'win32' ? 'icon.ico' : (process.platform === 'darwin' ? 'icon.icns' : 'icon.png');
+const iconPath = path.join(iconRoot, iconFile);
 const isSmokeTest = process.env.STORM_INC_SMOKE_TEST === '1';
 const isSimulationSmokeTest = process.env.STORM_INC_SIM_SMOKE_TEST === '1';
 
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('use-angle', 'd3d11');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('use-angle', 'd3d11');
   app.setAppUserModelId('com.enceladuscat.storminc');
 }
 

@@ -344,6 +344,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return basinViewCenters[basin] || basinViewCenters.WPAC;
     }
 
+    function isMobilePerformanceDevice() {
+        const narrowViewport = window.matchMedia?.('(max-width: 900px)').matches || false;
+        const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches || false;
+        return narrowViewport || coarsePointer;
+    }
+
+    function getPerformanceProfile() {
+        const mobile = isMobilePerformanceDevice();
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || false;
+        const heavyOverlayActive = state.showWindField || state.showPressureField || state.showSteeringCurrents;
+        const activeStorm = state.cyclone && state.cyclone.status === 'active';
+        const activeAge = Number(state.cyclone?.age || 0);
+
+        return {
+            mobile,
+            reducedMotion,
+            pressureGrid: mobile ? 44 : 80,
+            windStep: mobile ? 0.9 : 0.4,
+            steeringStep: mobile ? Math.max(118, Math.min(150, window.innerWidth / 4.7)) : null,
+            showCityLabels: !mobile || !activeStorm || !heavyOverlayActive || activeAge % 6 === 0
+        };
+    }
+
     let radarCanvas, radarCtx;
     if (savedSiteName) siteNameInput.value = savedSiteName;
     if (savedSiteLon) siteLonInput.value = savedSiteLon;
@@ -673,6 +696,9 @@ document.addEventListener('DOMContentLoaded', () => {
             .scale(height / (20 * Math.PI / 180))
             .translate([width / 2, height / 2])
             .center([initLon, initLat]);
+        if (mapProjection.precision) {
+            mapProjection.precision(getPerformanceProfile().mobile ? 4.2 : 3.1);
+        }
 
         if (!document.getElementById('interaction-fix-style')) {
             const style = document.createElement('style');
@@ -756,6 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showWindField: state.showWindField,
             showSteeringCurrents: state.showSteeringCurrents,
             remoteCyclone: getMultiplayerRemoteCyclone(),
+            performanceProfile: getPerformanceProfile(),
             basin: basinSelector?.value || 'WPAC'
         });
     }
@@ -766,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 2. 数据加载完，建立图层和投影
         setupCanvases();
         if (mapProjection && mapProjection.precision) {
-            mapProjection.precision(3.1); // 值越大越快，0.1 是平衡点
+            mapProjection.precision(getPerformanceProfile().mobile ? 4.2 : 3.1); // 值越大越快，0.1 是平衡点
         }
         // 3. 加载地形数据 (纹理)
         console.log("Loading Terrain Data...");
@@ -807,6 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showWindField: state.showWindField,
             showSteeringCurrents: state.showSteeringCurrents,
             remoteCyclone: getMultiplayerRemoteCyclone(),
+            performanceProfile: getPerformanceProfile(),
             basin: basinSelector?.value || 'WPAC'
         });
     });
@@ -2018,6 +2046,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             siteHistory: state.siteHistory,
             siteData: state.currentSiteData,
             remoteCyclone: getMultiplayerRemoteCyclone(),
+            performanceProfile: getPerformanceProfile(),
             basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
             onSiteClick: () => { 
                 state.isSiteSelected = !state.isSiteSelected;
@@ -2168,7 +2197,18 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         }
     }
 
+    let redrawPending = false;
+
     function requestRedraw() {
+        if (redrawPending) return;
+        redrawPending = true;
+        requestAnimationFrame(() => {
+            redrawPending = false;
+            performRedraw();
+        });
+    }
+
+    function performRedraw() {
         // 1. 确保在重绘前更新站点数据
         updateStateSiteData();
         // 2. 【核心】检查气旋状态，控制显示标志
@@ -2206,6 +2246,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     siteHistory: state.siteHistory,
                     siteData: siteDataToPass,
                     remoteCyclone: getMultiplayerRemoteCyclone(),
+                    performanceProfile: getPerformanceProfile(),
                     basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
                     onSiteClick: onSiteClickCallback,
                     isPaused: state.isPaused,
@@ -2754,7 +2795,10 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         }
     });
 
+    let resizeRedrawTimer = null;
     window.addEventListener('resize', () => {
+        clearTimeout(resizeRedrawTimer);
+        resizeRedrawTimer = setTimeout(() => {
         if (state.world) {
             setupCanvases();
              if (state.cyclone.status) {
@@ -2777,6 +2821,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                      siteHistory: state.siteHistory,
                      siteData: state.currentSiteData,
                      remoteCyclone: getMultiplayerRemoteCyclone(),
+                     performanceProfile: getPerformanceProfile(),
                      basin: state.cyclone?.basin || basinSelector.value || 'WPAC',
                      onSiteClick: () => {
                          state.isSiteSelected = !state.isSiteSelected;
@@ -2788,6 +2833,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                  drawHistoricalIntensityChart(chartContainer, state.cyclone.track, tooltip);
              }
         }
+        }, 120);
     });
 
     window.addEventListener('cycloneTrackClick', (e) => {

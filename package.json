@@ -1,15 +1,21 @@
 {
   "name": "advanced-storm-inc",
-  "version": "1.0.2",
-  "description": "Desktop Windows build of the STORM_INC tropical cyclone simulator.",
+  "version": "1.0.3",
+  "description": "Cross-platform desktop and web build of the STORM_INC tropical cyclone simulator.",
   "main": "electron/main.cjs",
   "author": "EnceladusCat",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "pack:desktop": "electron-builder --mac --linux --win --x64 --dir",
+    "build:desktop": "electron-builder --mac --linux --win --x64",
     "pack:win": "electron-builder --win --x64 --dir",
-    "build:win": "electron-builder --win --x64"
+    "build:win": "electron-builder --win --x64",
+    "pack:mac": "electron-builder --mac --x64 --arm64 --dir",
+    "build:mac": "electron-builder --mac --x64 --arm64",
+    "pack:linux": "electron-builder --linux --x64 --dir",
+    "build:linux": "electron-builder --linux --x64"
   },
   "build": {
     "appId": "com.enceladuscat.storminc",
@@ -24,9 +30,26 @@
       "Storm_Inc/**/*",
       "README.md",
       "DISCORD_OVERLAY.md",
+      "build/icon.ico",
+      "build/icon.icns",
+      "build/icon.png",
       "model.onnx",
       "weather_mapping.json",
       "sz_wind_data_updated.csv"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "build/icon.ico"
+      },
+      {
+        "from": "build/icon.icns",
+        "to": "build/icon.icns"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "build/icon.png"
+      }
     ],
     "win": {
       "target": [
@@ -36,6 +59,23 @@
       "icon": "build/icon.ico",
       "executableName": "STORM_INC",
       "requestedExecutionLevel": "asInvoker"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.games",
+      "icon": "build/icon.icns",
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,

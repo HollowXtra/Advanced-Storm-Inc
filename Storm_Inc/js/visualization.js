@@ -607,7 +607,11 @@ function checkLandFast(lon, lat) {
     return landGrid[y * landGridWidth + x] === 1;
 }
 
-export function drawWindField(mapSvg, mapProjection, cyclone, pressureSystems, world) {
+function isTouchOrSmallScreen() {
+    return window.matchMedia?.('(max-width: 900px), (pointer: coarse)').matches || false;
+}
+
+export function drawWindField(mapSvg, mapProjection, cyclone, pressureSystems, world, performanceProfile = {}) {
     const currentMonth = cyclone.currentMonth || 6;
     const { width, height } = mapSvg.node().getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -650,7 +654,7 @@ export function drawWindField(mapSvg, mapProjection, cyclone, pressureSystems, w
     const batchExt = [];  // > 50kt (粉紫色)
 
     const GEO_RANGE = 20; 
-    const GEO_STEP = 0.4; // [性能参数] 步长越大，点越少，FPS越高。建议 1.0 - 1.5
+    const GEO_STEP = performanceProfile.windStep || (isTouchOrSmallScreen() ? 0.9 : 0.4); // [性能参数] 步长越大，点越少，FPS越高。建议 1.0 - 1.5
     const arrowScale = 0.75;
     const headLen = 5;
 
@@ -974,10 +978,10 @@ export function drawForecastCone(container, mapProjection, pathForecasts) {
     });
 }
 
-function drawPressureField(container, mapProjection, pressureSystemsObj) {
+function drawPressureField(container, mapProjection, pressureSystemsObj, performanceProfile = {}) {
     const svgNode = container.node().closest('svg'); 
     const { width, height } = svgNode.getBoundingClientRect();
-    const nx = 80, ny = Math.round(nx * height / width), grid = [];
+    const nx = performanceProfile.pressureGrid || (isTouchOrSmallScreen() ? 44 : 80), ny = Math.round(nx * height / width), grid = [];
     
     // [关键修复] 提取低层系统用于绘图
     // 如果是新版对象结构，取 .lower；如果是旧版数组，直接使用
@@ -1005,7 +1009,7 @@ function drawPressureField(container, mapProjection, pressureSystemsObj) {
         .attr("d", pathGenerator);
 }
 
-function drawSteeringCurrents(container, projection, pressureSystems, width, height) {
+function drawSteeringCurrents(container, projection, pressureSystems, width, height, performanceProfile = {}) {
     container.selectAll("*").remove();
     if (!pressureSystems || !pressureSystems.upper || !pressureSystems.lower || typeof projection.invert !== 'function') return;
 
@@ -1023,7 +1027,7 @@ function drawSteeringCurrents(container, projection, pressureSystems, width, hei
         .attr("fill", "#67e8f9");
 
     const vectors = [];
-    const step = Math.max(74, Math.min(110, width / 9));
+    const step = performanceProfile.steeringStep || (isTouchOrSmallScreen() ? Math.max(118, Math.min(150, width / 4.7)) : Math.max(74, Math.min(110, width / 9)));
     for (let y = 54; y < height - 42; y += step) {
         for (let x = 54; x < width - 42; x += step) {
             const coords = projection.invert([x, y]);
@@ -1337,8 +1341,10 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         onSiteClick = null,
         isPaused = false,
         month = 8,
+        performanceProfile = null,
         basin = cyclone?.basin || remoteCyclone?.basin || null
     } = options;
+    const profile = performanceProfile || {};
 
     // 2. 初始化图层结构 (逻辑保持不变，但结构更清晰)
     const layerNames = [
@@ -1428,7 +1434,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     drawFictioniaDetails(staticLayer, pathGenerator, width, height, showFictioniaDetails);
 
     cityLabelLayer.selectAll("*").remove();
-    if (showCityLabels) {
+    if (showCityLabels && profile.showCityLabels !== false) {
         drawCityLabels(cityLabelLayer, mapProjection, width, height, cyclone);
     }
 
@@ -1436,7 +1442,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
 
     // 4. 风场 (Canvas) - 独立层，无需改动
     if (showWindField && cyclone && cyclone.status === 'active') {
-        drawWindField(mapSvg, mapProjection, cyclone, pressureSystems, world);
+        drawWindField(mapSvg, mapProjection, cyclone, pressureSystems, world, profile);
     } else {
         if (typeof windCtx !== 'undefined' && windCtx && typeof windCanvasLayer !== 'undefined' && windCanvasLayer) {
             windCtx.clearRect(0, 0, windCanvasLayer.width, windCanvasLayer.height);
@@ -1446,7 +1452,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // 5. 气压场 (Pressure)和湿度场 (Humidity)
     pressureLayer.selectAll("*").remove(); 
     if (showPressureField && cyclone && cyclone.status === 'active') {
-        drawPressureField(pressureLayer, mapProjection, pressureSystems);
+        drawPressureField(pressureLayer, mapProjection, pressureSystems, profile);
     }
 
     humidityLayer.selectAll("*").remove();
@@ -1457,7 +1463,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // 6. 风圈 (Wind Radii)
     steeringLayer.selectAll("*").remove();
     if (showSteeringCurrents && cyclone && cyclone.status === 'active') {
-        drawSteeringCurrents(steeringLayer, mapProjection, pressureSystems, width, height);
+        drawSteeringCurrents(steeringLayer, mapProjection, pressureSystems, width, height, profile);
     }
 
     windRadiiLayer.selectAll("*").remove(); 

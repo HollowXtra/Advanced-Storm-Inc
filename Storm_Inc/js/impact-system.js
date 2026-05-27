@@ -3,6 +3,8 @@ import { estimateRainAtPoint, estimateRainEnhancedSurge } from './environment-mo
 import { calculateDistance } from './utils.js';
 
 export const WARNING_META = {
+    EW_WARNING: { label: 'Extreme Wind Warning', shortLabel: 'EXT WIND', color: '#ff005d', priority: 6 },
+    EW_WATCH: { label: 'Extreme Wind Watch', shortLabel: 'EXT WATCH', color: '#f97316', priority: 5 },
     HU_WARNING: { label: 'Hurricane Warning', shortLabel: 'HU WARN', color: '#dc2626', priority: 4 },
     HU_WATCH: { label: 'Hurricane Watch', shortLabel: 'HU WATCH', color: '#e879f9', priority: 3 },
     TS_WARNING: { label: 'Tropical Storm Warning', shortLabel: 'TS WARN', color: '#2563eb', priority: 2 },
@@ -167,6 +169,10 @@ export function updateImpactState(impactState, cyclone) {
 
 function classifyWarning(windKt, hoursUntilImpact) {
     if (hoursUntilImpact > 48) return null;
+    // Extreme Wind Warnings are short-fused; the sim uses 3-hour forecast steps.
+    if (windKt >= 100) {
+        return hoursUntilImpact <= 3 ? 'EW_WARNING' : (hoursUntilImpact <= 18 ? 'EW_WATCH' : 'HU_WATCH');
+    }
     if (windKt >= 64) return hoursUntilImpact <= 36 ? 'HU_WARNING' : 'HU_WATCH';
     if (windKt >= 34) return hoursUntilImpact <= 36 ? 'TS_WARNING' : 'TS_WATCH';
     return null;

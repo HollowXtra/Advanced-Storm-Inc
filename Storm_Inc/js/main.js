@@ -1339,7 +1339,7 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
             <div class="flex items-center justify-between gap-2 bg-white/5 border border-white/5 px-2 py-1">
                 <span class="truncate" style="color:${warning.color}">${warning.shortLabel}</span>
                 <span class="text-slate-200 truncate text-right">${warning.city}</span>
-                <span class="text-slate-500">${Math.round(warning.hours)}H</span>
+                <span class="shrink-0 text-[10px] text-slate-500">${Math.round(warning.wind || 0)}KT/${Math.round(warning.hours)}H</span>
             </div>
         `).join('');
     }
@@ -1367,7 +1367,12 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         const topWarning = nextAdvisory.active[0];
         const affectedCount = nextAdvisory.active.length;
         const headlineHTML = `TCV UPDATE: <span class="text-white text-base align-middle not-italic ml-2 font-bold">${topWarning.label.toUpperCase()} ISSUED</span>`;
-        triggerNewsBanner(headlineHTML, `${affectedCount} ACTIVE WATCH/WARNING AREA${affectedCount === 1 ? '' : 'S'}`, currentHour, state.currentMonth, topWarning.priority >= 4 ? 'RED' : 'ORANGE');
+        const isExtremeWind = topWarning.code === 'EW_WARNING' || topWarning.code === 'EW_WATCH';
+        const bannerType = topWarning.priority >= 6 ? 'PURPLE' : (topWarning.priority >= 4 ? 'RED' : 'ORANGE');
+        const subText = isExtremeWind
+            ? `${Math.round(topWarning.wind || 0)}KT EXTREME WIND THREAT - ${affectedCount} AREA${affectedCount === 1 ? '' : 'S'}`
+            : `${affectedCount} ACTIVE WATCH/WARNING AREA${affectedCount === 1 ? '' : 'S'}`;
+        triggerNewsBanner(headlineHTML, subText, currentHour, state.currentMonth, bannerType);
     }
 
     function updatePagasaNaming() {

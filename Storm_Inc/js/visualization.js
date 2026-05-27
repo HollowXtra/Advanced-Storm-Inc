@@ -3,9 +3,118 @@
  * 包含所有 D3.js 绘图函数。
  */
 import { getCategory, getPressureAt, windToPressure, directionToCompass, createGeoCircle, unwrapLongitude, calculateHollandPressure, getSST, calculateDistance } from './utils.js';
-import { getWindVectorAt } from './cyclone-model.js';
+import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
+import { CITY_DATA } from './city-data.js';
+
+function scoreCityLabel(city, cyclone = null) {
+    const popScore = Math.log10(Math.max(1, city.p || 1));
+    const roleScore = (city.cap ? 1.25 : 0) + (city.wc ? 0.8 : 0);
+    let stormScore = 0;
+
+    if (cyclone && Number.isFinite(cyclone.lon) && Number.isFinite(cyclone.lat)) {
+        const distKm = calculateDistance(cyclone.lat, cyclone.lon, city.lat, city.lon);
+        stormScore = Math.max(0, 4 - distKm / 280);
+    }
+
+    return popScore + roleScore + stormScore - (city.r || 0) * 0.04;
+}
+
+function getVisibleCities(projection, width, height, cyclone = null, limit = 28, spacing = 72) {
+    const candidates = CITY_DATA
+        .map(city => {
+            const pos = projection([city.lon, city.lat]);
+            if (!pos || pos[0] < 12 || pos[0] > width - 12 || pos[1] < 12 || pos[1] > height - 12) {
+                return null;
+            }
+
+            return {
+                ...city,
+                x: pos[0],
+                y: pos[1],
+                score: scoreCityLabel(city, cyclone)
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+
+    const selected = [];
+    for (const city of candidates) {
+        const overlaps = selected.some(existing => Math.hypot(existing.x - city.x, existing.y - city.y) < spacing);
+        if (overlaps) continue;
+        selected.push(city);
+        if (selected.length >= limit) break;
+    }
+
+    return selected;
+}
+
+function drawCityLabels(container, projection, width, height, cyclone) {
+    const cities = getVisibleCities(projection, width, height, cyclone);
+
+    const groups = container.selectAll('g.city-label')
+        .data(cities, d => `${d.n}-${d.lon}-${d.lat}`)
+        .join(enter => {
+            const group = enter.append('g').attr('class', 'city-label');
+            group.append('circle').attr('r', 2.4);
+            group.append('text').attr('x', 6).attr('y', 3);
+            return group;
+        });
+
+    groups.attr('transform', d => `translate(${d.x},${d.y})`);
+    groups.select('circle')
+        .attr('fill', '#f8fafc')
+        .attr('stroke', '#020617')
+        .attr('stroke-width', 1.1)
+        .attr('opacity', 0.88);
+    groups.select('text')
+        .text(d => d.n.toUpperCase())
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('font-size', 9.5)
+        .attr('font-weight', 800)
+        .attr('fill', '#e2e8f0')
+        .attr('stroke', '#020617')
+        .attr('stroke-width', 2.5)
+        .attr('paint-order', 'stroke')
+        .attr('opacity', 0.82)
+        .style('pointer-events', 'none');
+}
+
+function drawWarningMarkers(container, projection, warnings = []) {
+    const visibleWarnings = warnings
+        .map(warning => ({ ...warning, pos: projection([warning.lon, warning.lat]) }))
+        .filter(warning => warning.pos)
+        .slice(0, 24);
+
+    const groups = container.selectAll('g.warning-marker')
+        .data(visibleWarnings, d => `${d.code}-${d.city}-${d.lon}-${d.lat}`)
+        .join(enter => {
+            const group = enter.append('g').attr('class', 'warning-marker');
+            group.append('rect').attr('rx', 2).attr('ry', 2);
+            group.append('text').attr('x', 11).attr('y', 4);
+            return group;
+        });
+
+    groups.attr('transform', d => `translate(${d.pos[0]},${d.pos[1]})`);
+    groups.select('rect')
+        .attr('x', -5).attr('y', -5)
+        .attr('width', 10).attr('height', 10)
+        .attr('fill', d => d.color)
+        .attr('stroke', '#ffffff')
+        .attr('stroke-width', 1.2)
+        .attr('opacity', 0.92);
+    groups.select('text')
+        .text(d => `${d.shortLabel} ${d.city.toUpperCase()}`)
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('font-size', 9.5)
+        .attr('font-weight', 900)
+        .attr('fill', d => d.color)
+        .attr('stroke', '#020617')
+        .attr('stroke-width', 3)
+        .attr('paint-order', 'stroke')
+        .style('pointer-events', 'none');
+}
 
 // [新增] 简单的伪随机噪声函数 (用于模拟大尺度湿度波动)
 function pseudoNoise(x, y) {
@@ -834,6 +943,162 @@ function drawPressureField(container, mapProjection, pressureSystemsObj) {
         .attr("d", pathGenerator);
 }
 
+function drawSteeringCurrents(container, projection, pressureSystems, width, height) {
+    container.selectAll("*").remove();
+    if (!pressureSystems || !pressureSystems.upper || !pressureSystems.lower || typeof projection.invert !== 'function') return;
+
+    const defs = container.append("defs");
+    defs.append("marker")
+        .attr("id", "steering-arrowhead")
+        .attr("viewBox", "0 -4 8 8")
+        .attr("refX", 7)
+        .attr("refY", 0)
+        .attr("markerWidth", 7)
+        .attr("markerHeight", 7)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("d", "M0,-4L8,0L0,4")
+        .attr("fill", "#67e8f9");
+
+    const vectors = [];
+    const step = Math.max(74, Math.min(110, width / 9));
+    for (let y = 54; y < height - 42; y += step) {
+        for (let x = 54; x < width - 42; x += step) {
+            const coords = projection.invert([x, y]);
+            if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) continue;
+            if (Math.abs(coords[1]) > 48) continue;
+
+            const steering = calculateSteering(coords[0], coords[1], pressureSystems);
+            const mag = Math.hypot(steering.steerU, steering.steerV);
+            if (!Number.isFinite(mag) || mag < 0.18) continue;
+
+            const length = Math.max(12, Math.min(34, mag * 4.2));
+            vectors.push({
+                x,
+                y,
+                x2: x + steering.steerU * length / mag,
+                y2: y - steering.steerV * length / mag,
+                mag
+            });
+        }
+    }
+
+    const vectorGroup = container.append("g")
+        .attr("class", "steering-current-vectors")
+        .style("pointer-events", "none");
+
+    vectorGroup.selectAll("line")
+        .data(vectors)
+        .enter()
+        .append("line")
+        .attr("x1", d => d.x)
+        .attr("y1", d => d.y)
+        .attr("x2", d => d.x2)
+        .attr("y2", d => d.y2)
+        .attr("stroke", "#67e8f9")
+        .attr("stroke-width", d => Math.max(1, Math.min(2.5, d.mag * 0.28)))
+        .attr("stroke-opacity", d => Math.max(0.28, Math.min(0.82, d.mag * 0.18)))
+        .attr("marker-end", "url(#steering-arrowhead)")
+        .attr("vector-effect", "non-scaling-stroke");
+}
+
+function drawStormGlyph(container, projection, cyclone) {
+    const pos = projection([cyclone.lon, cyclone.lat]);
+    if (!pos) return;
+
+    const [cx, cy] = pos;
+    const cat = getCategory(cyclone.intensity, cyclone.isTransitioning, cyclone.isExtratropical, cyclone.isSubtropical);
+    const structure = cyclone.stormStructure || {};
+    const intensity = Number(cyclone.intensity || 0);
+    const hemi = cyclone.lat >= 0 ? 1 : -1;
+    const radius = Math.max(8, Math.min(31, 7 + intensity * 0.13 + Math.sqrt(cyclone.circulationSize || 260) * 0.18));
+    const phase = ((cyclone.age || 0) * 0.11 + (cyclone.motionPhase || 0)) * hemi;
+    const armCount = intensity >= 96 ? 4 : (intensity >= 50 ? 3 : 2);
+
+    const glyph = container.selectAll(".storm-glyph")
+        .data([cyclone])
+        .join(enter => enter.append("g").attr("class", "storm-glyph"));
+
+    glyph.attr("transform", `translate(${cx},${cy})`);
+    glyph.selectAll("*").remove();
+
+    const line = d3.line()
+        .x(d => d.x)
+        .y(d => d.y)
+        .curve(d3.curveCatmullRom.alpha(0.65));
+
+    for (let arm = 0; arm < armCount; arm++) {
+        const points = [];
+        for (let i = 0; i <= 28; i++) {
+            const t = i / 28;
+            const r = radius * (0.2 + t * 0.95);
+            const wobble = Math.sin(t * Math.PI * 3 + arm + phase) * (1.2 + structure.asymmetry * 1.7);
+            const angle = phase + hemi * (t * 4.8 + arm * (Math.PI * 2 / armCount));
+            points.push({
+                x: Math.cos(angle) * (r + wobble),
+                y: Math.sin(angle) * (r + wobble)
+            });
+        }
+
+        glyph.append("path")
+            .attr("d", line(points))
+            .attr("fill", "none")
+            .attr("stroke", arm % 2 === 0 ? "#e0f2fe" : cat.color)
+            .attr("stroke-width", intensity >= 64 ? 2.2 : 1.7)
+            .attr("stroke-linecap", "round")
+            .attr("stroke-opacity", intensity >= 34 ? 0.82 : 0.58)
+            .attr("vector-effect", "non-scaling-stroke")
+            .style("filter", "drop-shadow(0 0 5px rgba(125,211,252,0.45))");
+    }
+
+    glyph.append("circle")
+        .attr("r", radius * (intensity >= 64 ? 0.92 : 0.55))
+        .attr("fill", "none")
+        .attr("stroke", cat.color)
+        .attr("stroke-width", 1.25)
+        .attr("stroke-opacity", 0.42)
+        .attr("vector-effect", "non-scaling-stroke");
+
+    if (structure.dualWindMaxima && structure.secondaryEyewallRadiusKm) {
+        glyph.append("circle")
+            .attr("r", Math.min(radius * 1.18, Math.max(radius * 0.62, structure.secondaryEyewallRadiusKm / 5.8)))
+            .attr("fill", "none")
+            .attr("stroke", "#fef08a")
+            .attr("stroke-width", 1.8)
+            .attr("stroke-dasharray", "3 3")
+            .attr("stroke-opacity", 0.88)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    const eyePx = intensity >= 64
+        ? Math.max(1.4, Math.min(7.5, (structure.eyeRadiusKm || 18) / 5.5))
+        : 0;
+
+    if (eyePx > 0) {
+        glyph.append("circle")
+            .attr("class", "storm-eye")
+            .attr("r", eyePx)
+            .attr("fill", "#020617")
+            .attr("stroke", structure.pinholeScore > 0.55 ? "#ffffff" : "#bae6fd")
+            .attr("stroke-width", structure.pinholeScore > 0.55 ? 1.8 : 1.2)
+            .attr("stroke-opacity", 0.95)
+            .attr("vector-effect", "non-scaling-stroke");
+    } else {
+        glyph.append("circle")
+            .attr("r", 3.2)
+            .attr("fill", cat.color)
+            .attr("fill-opacity", 0.8);
+    }
+
+    glyph.append("circle")
+        .attr("class", "storm-center-dot")
+        .attr("r", 2.2)
+        .attr("fill", cat.color)
+        .attr("stroke", "#ffffff")
+        .attr("stroke-width", 0.8)
+        .attr("vector-effect", "non-scaling-stroke");
+}
+
 export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     if (!world || !mapSvg) return;
 
@@ -847,6 +1112,9 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         showWindRadii = false,
         showPathPoints = false,
         showWindField = false,
+        showSteeringCurrents = false,
+        showCityLabels = true,
+        warnings = [],
         siteName = null,
         siteLon = null,
         siteLat = null,
@@ -866,6 +1134,8 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         "layer-track-lines",  // 历史路径线
         "layer-track-points", // 历史路径点
         "layer-wind-radii",   // 风圈
+        "layer-warnings",
+        "layer-city-labels",
         "layer-cyclone",      // 当前气旋图标
         "layer-pressure-handles",   // 压力系统控制手柄层
         "track-interaction-layer",
@@ -878,13 +1148,19 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
             mapSvg.append("g").attr("class", className);
         }
     });
+    if (mapSvg.select(".layer-steering").empty()) {
+        mapSvg.insert("g", ".layer-forecast").attr("class", "layer-steering");
+    }
     const staticLayer = mapSvg.select(".layer-static");
+    const cityLabelLayer = mapSvg.select(".layer-city-labels");
     const pressureLayer = mapSvg.select(".layer-pressure");
+    const steeringLayer = mapSvg.select(".layer-steering");
     const humidityLayer = mapSvg.select(".layer-humidity");
     const forecastLayer = mapSvg.select(".layer-forecast");
     const trackLineLayer = mapSvg.select(".layer-track-lines");
     const trackPointLayer = mapSvg.select(".layer-track-points");
     const windRadiiLayer = mapSvg.select(".layer-wind-radii");
+    const warningsLayer = mapSvg.select(".layer-warnings");
     const cycloneLayer = mapSvg.select(".layer-cyclone");
     const uiLayer = mapSvg.select(".layer-ui");
     const pressureHandlesLayer = mapSvg.select(".layer-pressure-handles");
@@ -923,6 +1199,11 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     staticLayer.select(".graticule").attr("d", pathGenerator);
     staticLayer.select(".land-group").selectAll(".land").attr("d", pathGenerator);
 
+    cityLabelLayer.selectAll("*").remove();
+    if (showCityLabels) {
+        drawCityLabels(cityLabelLayer, mapProjection, width, height, cyclone);
+    }
+
     // ============================================================
 
     // 4. 风场 (Canvas) - 独立层，无需改动
@@ -946,6 +1227,11 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     }
 
     // 6. 风圈 (Wind Radii)
+    steeringLayer.selectAll("*").remove();
+    if (showSteeringCurrents && cyclone && cyclone.status === 'active') {
+        drawSteeringCurrents(steeringLayer, mapProjection, pressureSystems, width, height);
+    }
+
     windRadiiLayer.selectAll("*").remove(); 
     if (showWindRadii && cyclone && cyclone.status === 'active') {
         drawWindRadii(windRadiiLayer, pathGenerator, cyclone, pressureSystems, isPaused);
@@ -1043,21 +1329,35 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
                     .attr("r", 7)
                     .attr("stroke", "white")
                     .attr("stroke-width", 1.5)
+                    .attr("vector-effect", "non-scaling-stroke")
+                    .style("filter", "drop-shadow(0 0 6px rgba(255,255,255,0.65))")
                     .attr("cx", d => mapProjection([d.lon, d.lat])[0])
                     .attr("cy", d => mapProjection([d.lon, d.lat])[1])
-                    .attr("fill", d => getCategory(d.intensity, d.isTransitioning, d.isExtratropical, d.isSubtropical).color),
+                    .attr("fill", d => getCategory(d.intensity, d.isTransitioning, d.isExtratropical, d.isSubtropical).color)
+                    .attr("class", d => {
+                        const isExtreme = d.intensity >= 96 && !d.isExtratropical;
+                        return isExtreme ? "extreme-intensity-glow" : "";
+                    }),
                 update => update
                     .attr("cx", d => mapProjection([d.lon, d.lat])[0])
                     .attr("cy", d => mapProjection([d.lon, d.lat])[1])
                     .attr("fill", d => getCategory(d.intensity, d.isTransitioning, d.isExtratropical, d.isSubtropical).color)
-                    .style("border-radius", "50%")
+                    .attr("vector-effect", "non-scaling-stroke")
+                    .style("filter", "drop-shadow(0 0 6px rgba(255,255,255,0.65))")
                     .attr("class", d => {
                         const isExtreme = d.intensity >= 96 && !d.isExtratropical;
                         return isExtreme ? "extreme-intensity-glow" : "";
                     })
             );
+        cycloneLayer.selectAll("*").remove();
+        drawStormGlyph(cycloneLayer, mapProjection, cyclone);
     } else {
         cycloneLayer.selectAll("*").remove();
+    }
+
+    warningsLayer.selectAll("*").remove();
+    if (warnings && warnings.length > 0) {
+        drawWarningMarkers(warningsLayer, mapProjection, warnings);
     }
 
     pressureHandlesLayer.selectAll("*").remove(); 
@@ -1551,7 +1851,7 @@ export function drawAllHistoryTracks(mapSvg, mapProjection, historyList, world) 
 
     // 1. 清理动态层
     const layersToClear = [
-        ".layer-pressure", ".layer-humidity", ".layer-forecast", 
+        ".layer-pressure", ".layer-humidity", ".layer-steering", ".layer-forecast",
         ".layer-wind-radii", ".layer-cyclone", ".track-interaction-layer", 
         ".layer-ui", ".layer-pressure-handles"
     ];
@@ -1972,35 +2272,8 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
     ctx.fill();
     ctx.stroke();
 
-    const majorCities = [
-        // 西太/东亚
-        { name: "SAIPAN", lon: 145.7, lat: 15.2 },
-        { name: "MANILA", lon: 120.98, lat: 14.6 },
-        { name: "TAIPEI", lon: 121.5, lat: 25.05 },
-        { name: "HONG KONG", lon: 114.17, lat: 22.3 },
-        { name: "YAP", lat: 9.51, lon: 138.12 },
-        { name: "SHANGHAI", lon: 121.47, lat: 31.23 },
-        { name: "SEOUL", lon: 126.98, lat: 37.56 },
-        { name: "TOKYO", lon: 139.69, lat: 35.69 },
-        { name: "HO CHI MINH", lon: 106.63, lat: 10.82 },
-        { name: "NAHA", lon: 127.68, lat: 26.21 }, // 冲绳
-        { name: "GUAM", lon: 144.7, lat: 13.4 },   // 关岛
-        { name: "IWO TO", lon: 141.3, lat: 24.8 }, // 硫磺岛
-        { name: "DHAKA", lon: 90.39, lat: 23.73 },
-
-        // 北美/中太
-        { name: "HONOLULU", lon: -157.86, lat: 21.31 },
-        { name: "LOS ANGELES", lon: -118.24, lat: 34.05 },
-        { name: "HAVANA", lon: -82.35, lat: 23.13 },
-        { name: "NEW YORK", lon: -74.00, lat: 40.71 },
-        { name: "HOUSTON", lon: -95.37, lat: 29.76 },
-        { name: "SAN FRANCISCO", lon: -122.42, lat: 37.77 },
-
-        // 南半球
-        { name: "BRISBANE", lon: 153.02, lat: -27.47 },
-        { name: "DARWIN", lon: 130.84, lat: -12.46 },
-        { name: "CAIRNS", lon: 145.77, lat: -16.92 }
-    ];
+    const majorCities = getVisibleCities(projection, width, height, { lon: centerLon, lat: centerLat }, 30, 72)
+        .map(city => ({ name: city.n.toUpperCase(), lon: city.lon, lat: city.lat }));
 
     ctx.save();
     ctx.fillStyle = "black";
@@ -2761,37 +3034,9 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
 
     ctx.restore();
 
-    const cityDatabase = [
-        { name: "NAHA", lat: 26.21, lon: 127.68 },
-        { name: "KADENA", lat: 26.35, lon: 127.77 },
-        { name: "TOKYO", lat: 35.69, lon: 139.69 },
-        { name: "YOKOSUKA", lat: 35.28, lon: 139.67 },
-        { name: "SASEBO", lat: 33.16, lon: 129.72 },
-        { name: "OSAKA", lat: 34.69, lon: 135.50 },
-        { name: "IWO TO", lat: 24.78, lon: 141.32 },
-        { name: "TAIPEI", lat: 25.03, lon: 121.56 },
-        { name: "HONG KONG", lat: 22.32, lon: 114.17 },
-        { name: "MANILA", lat: 14.60, lon: 120.98 },
-        { name: "SUBIC BAY", lat: 14.78, lon: 120.28 },
-        { name: "GUAM", lat: 13.44, lon: 144.79 },
-        { name: "SAIPAN", lat: 15.20, lon: 145.75 },
-        { name: "YAP", lat: 9.51, lon: 138.12 },
-        { name: "KOROR", lat: 7.34, lon: 134.48 },
-        { name: "SHANGHAI", lat: 31.23, lon: 121.47 },
-        { name: "SEOUL", lat: 37.56, lon: 126.97 },
-        { name: "HANOI", lat: 21.02, lon: 105.83 },
-        { name: "HONOLULU", lon: -157.86, lat: 21.31 },
-        { name: "HAVANA", lon: -82.35, lat: 23.13 },
-        { name: "LOS ANGELES", lon: -118.24, lat: 34.05 },
-        { name: "NEW YORK", lon: -74.00, lat: 40.71 },
-        { name: "HOUSTON", lon: -95.37, lat: 29.76 },
-        { name: "SAN FRANCISCO", lon: -122.42, lat: 37.77 },
-        { name: "BRISBANE", lon: 153.02, lat: -27.47 },
-        { name: "DARWIN", lon: 130.84, lat: -12.46 },
-        { name: "CAIRNS", lon: 145.77, lat: -16.92 },
-        { name: "DHAKA", lon: 90.39, lat: 23.73 },
-        { name: "HO CHI MINH", lat: 10.82, lon: 106.63 }
-    ];
+    const cityDatabase = CITY_DATA
+        .filter(city => (city.p || 0) >= 100000 || city.cap || city.wc)
+        .map(city => ({ name: city.n.toUpperCase(), lat: city.lat, lon: city.lon, population: city.p || 0 }));
 
     // 2. 获取预测路径 (优先使用 meanTrack 平滑中心线，否则用模型1)
     let forecastPath = [];

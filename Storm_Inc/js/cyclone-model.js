@@ -5,6 +5,7 @@
 import { NAME_LISTS, getSST, getPressureAt, normalizeLongitude, calculateDistance, windToPressure } from './utils.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { calculateBackgroundHumidity } from './visualization.js';
+import { calculateCycloneRainfall, calculateOceanHeatContent } from './environment-model.js';
 
 const basinConfig = {
     'WPAC': { lon: { min: 100, max: 180 }, lat: { min: 5, max: 25 } },  // 西北太平洋
@@ -15,6 +16,181 @@ const basinConfig = {
     'SIO':  { lon: { min: 30,  max: 140 }, lat: { min: -15, max: -5 } },
     'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } }
 };
+
+const genesisProfiles = {
+    WPAC: [
+        { weight: 3.4, lon: 145, lonSpread: 15, lat: 11, latSpread: 4.5, peaks: [8, 9], motion: { direction: 292, spread: 22, speed: 10.5 } },
+        { weight: 2.4, lon: 125, lonSpread: 10, lat: 14, latSpread: 4.0, peaks: [7, 8, 9], motion: { direction: 300, spread: 24, speed: 9.5 } },
+        { weight: 1.3, lon: 162, lonSpread: 10, lat: 9, latSpread: 3.5, peaks: [10, 11], motion: { direction: 285, spread: 20, speed: 12.0 } },
+        { weight: 0.9, lon: 114, lonSpread: 8, lat: 16, latSpread: 4.0, peaks: [6, 7, 8], motion: { direction: 305, spread: 24, speed: 8.5 } }
+    ],
+    EPAC: [
+        { weight: 3.0, lon: 250, lonSpread: 8, lat: 12, latSpread: 3.0, peaks: [8, 9], motion: { direction: 285, spread: 18, speed: 11.0 } },
+        { weight: 2.0, lon: 232, lonSpread: 14, lat: 12, latSpread: 3.5, peaks: [7, 8, 9], motion: { direction: 280, spread: 18, speed: 12.5 } },
+        { weight: 0.9, lon: 200, lonSpread: 11, lat: 11, latSpread: 3.0, peaks: [8, 9, 10], motion: { direction: 280, spread: 20, speed: 13.0 } }
+    ],
+    NATL: [
+        { weight: 3.0, lon: 315, lonSpread: 14, lat: 13, latSpread: 3.0, peaks: [8, 9], motion: { direction: 285, spread: 18, speed: 13.0 } },
+        { weight: 2.2, lon: 285, lonSpread: 12, lat: 16, latSpread: 4.0, peaks: [9, 10], motion: { direction: 300, spread: 24, speed: 9.5 } },
+        { weight: 1.5, lon: 268, lonSpread: 6, lat: 21, latSpread: 4.5, peaks: [8, 9, 10], motion: { direction: 325, spread: 30, speed: 8.0 } },
+        { weight: 0.9, lon: 340, lonSpread: 7, lat: 25, latSpread: 4.0, peaks: [9, 10], motion: { direction: 330, spread: 34, speed: 10.0 } }
+    ],
+    NIO: [
+        { weight: 2.2, lon: 88, lonSpread: 6, lat: 13, latSpread: 4.0, peaks: [5, 10, 11], motion: { direction: 315, spread: 38, speed: 8.0 } },
+        { weight: 1.6, lon: 66, lonSpread: 6, lat: 14, latSpread: 4.0, peaks: [5, 6, 10, 11], motion: { direction: 300, spread: 36, speed: 7.5 } }
+    ],
+    SHEM: [
+        { weight: 2.6, lon: 165, lonSpread: 16, lat: -11, latSpread: 3.8, peaks: [1, 2, 3], motion: { direction: 245, spread: 24, speed: 10.5 } },
+        { weight: 1.4, lon: 185, lonSpread: 10, lat: -13, latSpread: 4.0, peaks: [1, 2, 3], motion: { direction: 250, spread: 24, speed: 11.0 } }
+    ],
+    SIO: [
+        { weight: 2.5, lon: 75, lonSpread: 18, lat: -11, latSpread: 3.6, peaks: [1, 2, 3], motion: { direction: 250, spread: 24, speed: 10.0 } },
+        { weight: 1.8, lon: 120, lonSpread: 12, lat: -12, latSpread: 3.6, peaks: [1, 2, 3], motion: { direction: 250, spread: 24, speed: 10.5 } },
+        { weight: 0.8, lon: 48, lonSpread: 8, lat: -13, latSpread: 3.5, peaks: [1, 2, 12], motion: { direction: 235, spread: 24, speed: 8.5 } }
+    ],
+    SATL: [
+        { weight: 1.0, lon: -35, lonSpread: 10, lat: -19, latSpread: 4.0, peaks: [2, 3], motion: { direction: 235, spread: 28, speed: 8.0 } },
+        { weight: 0.6, lon: -15, lonSpread: 8, lat: -22, latSpread: 3.5, peaks: [2, 3], motion: { direction: 225, spread: 28, speed: 9.0 } }
+    ]
+};
+
+function randNormal(mean = 0, spread = 1) {
+    let u = 0;
+    let v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return mean + Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v) * spread;
+}
+
+function circularMonthDistance(month, targetMonth) {
+    const raw = Math.abs(month - targetMonth);
+    return Math.min(raw, 12 - raw);
+}
+
+function seasonalProfileWeight(profile, month) {
+    if (!profile.peaks || profile.peaks.length === 0) return 1;
+    const nearest = Math.min(...profile.peaks.map(peak => circularMonthDistance(month, peak)));
+    return 0.18 + Math.exp(-(nearest * nearest) / 8);
+}
+
+function chooseWeighted(items, getWeight) {
+    const weighted = items.map(item => ({ item, weight: Math.max(0.001, getWeight(item)) }));
+    const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * total;
+    for (const entry of weighted) {
+        roll -= entry.weight;
+        if (roll <= 0) return entry.item;
+    }
+    return weighted[weighted.length - 1].item;
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function calculateStormStructure(cyclone, totalShear = 0) {
+    const intensity = Number(cyclone.intensity || 0);
+    const size = clamp(Number(cyclone.circulationSize || 300), 100, 800);
+    const rmwKm = clamp(7 + size * 0.12 - Math.max(0, intensity - 75) * 0.12, 8, 95);
+    const ohc = Number(cyclone.ohcKjCm2 || 0);
+    const humidity = Number(cyclone.environmentHumidity || 72);
+    const ercActive = cyclone.ercState && cyclone.ercState !== 'none';
+    const ercProgress = ercActive && cyclone.ercStartTime != null && cyclone.ercDuration
+        ? clamp(((cyclone.age || 0) - cyclone.ercStartTime) / cyclone.ercDuration, 0, 1)
+        : 0;
+    const compactCore = clamp((intensity - 90) / 55, 0, 1) * clamp((ohc - 45) / 75, 0, 1) * clamp((78 - totalShear) / 78, 0, 1);
+    const pinholeScore = ercActive ? 0 : compactCore * (humidity >= 68 ? 1 : 0.65);
+
+    let eyeRadiusKm = intensity >= 64 ? clamp(42 - (intensity - 64) * 0.28 + size * 0.015, 6, 62) : 0;
+    let secondaryEyewallRadiusKm = 0;
+    let dualWindMaxima = false;
+
+    if (pinholeScore > 0.55) {
+        eyeRadiusKm = clamp(17 - pinholeScore * 10, 5, 14);
+    }
+
+    if (ercActive) {
+        dualWindMaxima = true;
+        const startEye = clamp(eyeRadiusKm, 8, 36);
+        if (cyclone.ercState === 'weakening') {
+            eyeRadiusKm = clamp(startEye * (1 - ercProgress * 0.55), 5, 32);
+            secondaryEyewallRadiusKm = clamp(rmwKm * (1.65 + ercProgress * 0.9), 35, 160);
+        } else {
+            const recoveryProgress = ercProgress;
+            eyeRadiusKm = clamp(startEye + 18 * recoveryProgress, 18, 75);
+            secondaryEyewallRadiusKm = clamp(rmwKm * (2.2 - recoveryProgress * 0.35), 40, 180);
+            dualWindMaxima = recoveryProgress < 0.82;
+        }
+    }
+
+    return {
+        rmwKm,
+        eyeRadiusKm,
+        secondaryEyewallRadiusKm,
+        dualWindMaxima,
+        pinholeScore,
+        ercState: cyclone.ercState || 'none',
+        ercProgress,
+        asymmetry: clamp(totalShear / 40, 0, 1.3),
+        rainShieldKm: cyclone.rainShieldKm || 0
+    };
+}
+
+function sampleClampedNormal(mean, spread, min, max) {
+    for (let i = 0; i < 6; i++) {
+        const value = randNormal(mean, spread);
+        if (value >= min && value <= max) return value;
+    }
+    return clamp(randNormal(mean, spread * 0.7), min, max);
+}
+
+function normalizeForBasinRange(lon, lonRange) {
+    if (lonRange.min >= 0 && lonRange.max > 180) {
+        let value = lon % 360;
+        if (value < 0) value += 360;
+        return value;
+    }
+
+    return normalizeLongitude(lon);
+}
+
+function sampleGenesisPoint(basin, month, globalTemp) {
+    const selectedBasin = basinConfig[basin] || basinConfig.WPAC;
+    const profiles = genesisProfiles[basin] || genesisProfiles.WPAC;
+    const tempAnomaly = Number.isFinite(globalTemp) ? globalTemp - 289 : 0;
+    const profile = chooseWeighted(profiles, item => item.weight * seasonalProfileWeight(item, month));
+    const hemisphere = selectedBasin.lat.max <= 0 ? -1 : 1;
+    const polewardShift = hemisphere * clamp(tempAnomaly * 0.35, -1.8, 2.4);
+    const latMin = selectedBasin.lat.min + polewardShift;
+    const latMax = selectedBasin.lat.max + polewardShift;
+
+    const lon = sampleClampedNormal(
+        normalizeForBasinRange(profile.lon, selectedBasin.lon),
+        profile.lonSpread,
+        selectedBasin.lon.min,
+        selectedBasin.lon.max
+    );
+    const lat = sampleClampedNormal(profile.lat + polewardShift, profile.latSpread, latMin, latMax);
+
+    return { lon, lat, profile };
+}
+
+function getInitialMotion(lon, lat, basin, profile = null) {
+    const fallbackByBasin = {
+        WPAC: { direction: 292, spread: 24, speed: 10 },
+        EPAC: { direction: 282, spread: 18, speed: 12 },
+        NATL: { direction: lon > 305 ? 286 : 310, spread: 26, speed: 10 },
+        NIO: { direction: 305, spread: 36, speed: 8 },
+        SHEM: { direction: 248, spread: 24, speed: 10 },
+        SIO: { direction: 248, spread: 24, speed: 10 },
+        SATL: { direction: 232, spread: 28, speed: 8 }
+    };
+    const motion = profile?.motion || fallbackByBasin[basin] || fallbackByBasin.WPAC;
+    const polewardBias = Math.abs(lat) > 18 ? (lat >= 0 ? 12 : -12) : 0;
+    const direction = (randNormal(motion.direction + polewardBias, motion.spread) + 360) % 360;
+    const speed = clamp(randNormal(motion.speed, 2.2), 5, 18);
+    return { direction, speed };
+}
 
 function calculateLayerWind(lon, lat, systems) {
     const dDeg = 0.5;
@@ -121,6 +297,7 @@ export function getWindVectorAt(lon, lat, month, cyclone, pressureSystems) {
 
 export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, globalShear, customLon = null, customLat = null) {
     let lat, lon, isOverLand;
+    let selectedProfile = null;
 
     let useCustomCoords = (customLon !== null && customLat !== null);
     
@@ -137,31 +314,42 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
     }
     
     if (!useCustomCoords) {
-        const selectedBasin = basinConfig[basin] || basinConfig['WPAC']; // WPAC default
-        const lonRange = selectedBasin.lon;
-        const latBaseRange = selectedBasin.lat;
+        const selectedBasin = basinConfig[basin] || basinConfig['WPAC'];
+        let bestCandidate = null;
 
-        const seasonalFactor = (Math.cos((month - 8) * (Math.PI / 6)) + 1) / 2; // 0 ~ 1
+        for (let attempt = 0; attempt < 180; attempt++) {
+            const candidate = attempt < 135
+                ? sampleGenesisPoint(basin, month, globalTemp)
+                : {
+                    lon: selectedBasin.lon.min + Math.random() * (selectedBasin.lon.max - selectedBasin.lon.min),
+                    lat: selectedBasin.lat.min + Math.random() * (selectedBasin.lat.max - selectedBasin.lat.min),
+                    profile: null
+                };
 
-        const latRangeSpan = latBaseRange.max - latBaseRange.min;
-        const hem = latBaseRange.max > 0 ? 1 : -1;
-        const seasonalShift = latBaseRange.max > 0 ? (latRangeSpan / 4) * (seasonalFactor - 0.5) :
-        (latRangeSpan / 4) * (seasonalFactor - 0.5);
-        const currentMinLat = latBaseRange.min + seasonalShift + hem*Math.max(0,(globalTemp / 2.89 - 100));
-        const currentMaxLat = latBaseRange.max + 4 * seasonalShift + hem*(globalTemp / 2.89 - 100);
-        const latSpan = currentMaxLat - currentMinLat;
+            const status = getLandStatus(candidate.lon, candidate.lat);
+            const sst = getSST(candidate.lat, candidate.lon, month, globalTemp);
+            const score = sst - (status.isLand ? 100 : 0) - (status.isNearLand ? 1.2 : 0);
 
-        // 4. Don't spawn on land
-        let sst;
-        do {
-            lat = currentMinLat + Math.random() * latSpan;
-            lon = lonRange.min + Math.random() * (lonRange.max - lonRange.min);
-            const status = getLandStatus(lon, lat);
-            isOverLand = status.isLand;
+            if (!bestCandidate || score > bestCandidate.score) {
+                bestCandidate = { ...candidate, isOverLand: status.isLand, score };
+            }
 
-            sst = getSST(lat, lon, month, globalTemp);
+            const minGenesisSst = attempt < 100 ? 25.7 : 25.1;
+            if (!status.isLand && sst >= minGenesisSst) {
+                lon = candidate.lon;
+                lat = candidate.lat;
+                selectedProfile = candidate.profile;
+                isOverLand = false;
+                break;
+            }
+        }
 
-        } while (isOverLand || sst < 25.4); // 如果在陆地上或者海温过低，重试
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+            lon = bestCandidate?.lon ?? ((selectedBasin.lon.min + selectedBasin.lon.max) / 2);
+            lat = bestCandidate?.lat ?? ((selectedBasin.lat.min + selectedBasin.lat.max) / 2);
+            selectedProfile = bestCandidate?.profile || null;
+            isOverLand = bestCandidate?.isOverLand || false;
+        }
     }
 
     // --- Subtropical ---
@@ -182,12 +370,14 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         monsoonDepressionEndTime = durationSteps * 3;
     }
 
+    const initialMotion = getInitialMotion(lon, lat, basin, selectedProfile);
+
     return {
         lat: lat,
         lon: lon,
         intensity: 23 + Math.random() * 2,
-        direction: Math.random() * 360,
-        speed: 10 + Math.random() * 5,
+        direction: initialMotion.direction,
+        speed: initialMotion.speed,
         basin: basin,
         age: 0,
         shearEventActive: false,
@@ -206,13 +396,42 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         extratropicalDevelopmentEndTime: 0,
         extratropicalMaxIntensity: 0,
         upwellingCoolingEffect: 0,
+        ohcKjCm2: 0,
+        depth26M: 0,
+        ohcLabel: 'open ocean',
+        rainRateMmHr: 0,
+        rainTotalMm: 0,
+        maxRainRateMmHr: 0,
+        rainShieldKm: 0,
+        environmentHumidity: 74,
+        centralPressure: 1010,
+        inPAR: false,
+        pagasaName: '',
+        parEnteredHour: null,
         isERCActive: false,
         ercState: 'none',
         ercEndTime: 0,
+        ercStartTime: 0,
+        ercDuration: 0,
         ercMpiReduction: 0,
         ercSizeFactor: 1.0,
+        stormStructure: {
+            rmwKm: 28,
+            eyeRadiusKm: 0,
+            secondaryEyewallRadiusKm: 0,
+            dualWindMaxima: false,
+            pinholeScore: 0,
+            ercState: 'none',
+            ercProgress: 0,
+            asymmetry: 0,
+            rainShieldKm: 0
+        },
         circulationSize: 150 + Math.random() * 350,
         r34: 0, r50: 0, r64: 0,
+        motionWobble: (Math.random() - 0.5) * 4,
+        motionPhase: Math.random() * Math.PI * 2,
+        steerMemoryU: 0,
+        steerMemoryV: 0,
         forecastLogs: {},
         ace: 0
     };
@@ -602,14 +821,24 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     }
 
     // Movement
-    let steeringDirection = (Math.atan2(steerU, steerV) * 180 / Math.PI + 360) % 360;
+    const prevSteerU = Number.isFinite(updatedCyclone.steerMemoryU) ? updatedCyclone.steerMemoryU : steerU;
+    const prevSteerV = Number.isFinite(updatedCyclone.steerMemoryV) ? updatedCyclone.steerMemoryV : steerV;
+    const steerBlend = updatedCyclone.isExtratropical ? 0.55 : 0.34 + Math.min(0.08, Math.abs(updatedCyclone.lat) / 250);
+    const smoothedSteerU = prevSteerU * (1 - steerBlend) + steerU * steerBlend;
+    const smoothedSteerV = prevSteerV * (1 - steerBlend) + steerV * steerBlend;
+    updatedCyclone.steerMemoryU = smoothedSteerU;
+    updatedCyclone.steerMemoryV = smoothedSteerV;
+
+    let steeringDirection = (Math.atan2(smoothedSteerU, smoothedSteerV) * 180 / Math.PI + 360) % 360;
     let angleDiff = steeringDirection - updatedCyclone.direction;
     while (angleDiff < -180) angleDiff += 360;
     while (angleDiff > 180) angleDiff -= 360;
-    updatedCyclone.direction = (updatedCyclone.direction + angleDiff * 0.25 + 360) % 360;
+    const turnRate = updatedCyclone.isExtratropical ? 0.38 : 0.16 + Math.min(0.1, Math.abs(updatedCyclone.lat) / 160);
+    updatedCyclone.direction = (updatedCyclone.direction + angleDiff * turnRate + 360) % 360;
 
-    const steeringSpeedKnots = Math.hypot(steerU, steerV) * 1.94384; 
-    updatedCyclone.speed += (steeringSpeedKnots - updatedCyclone.speed) * (0.3 + Math.max(0, updatedCyclone.lat / 100));
+    const steeringSpeedKnots = Math.max(2, Math.min(42, Math.hypot(smoothedSteerU, smoothedSteerV) * 1.94384));
+    const speedResponse = updatedCyclone.isExtratropical ? 0.36 : 0.18 + Math.min(0.2, Math.abs(updatedCyclone.lat) / 120);
+    updatedCyclone.speed += (steeringSpeedKnots - updatedCyclone.speed) * speedResponse;
 
     // Cold welling
     if (updatedCyclone.speed < 6) {
@@ -619,8 +848,13 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.upwellingCoolingEffect = Math.max(updatedCyclone.upwellingCoolingEffect - 0.2, 0); 
     }
 
+    const ohcInfo = calculateOceanHeatContent(updatedCyclone.lat, updatedCyclone.lon, month, globalTemp);
     let sst = getSST(updatedCyclone.lat, updatedCyclone.lon, month, globalTemp);
     sst -= updatedCyclone.upwellingCoolingEffect;
+    const upwellingHeatPenalty = updatedCyclone.upwellingCoolingEffect * 10;
+    updatedCyclone.ohcKjCm2 = Math.max(0, Math.round(ohcInfo.ohcKjCm2 - upwellingHeatPenalty));
+    updatedCyclone.depth26M = Math.max(0, Math.round(ohcInfo.depth26M - updatedCyclone.upwellingCoolingEffect * 4));
+    updatedCyclone.ohcLabel = ohcInfo.label;
     
     // Transition
     if (!updatedCyclone.isTransitioning && sst < -8.0) {
@@ -673,32 +907,54 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         // MPI Logic
         let mpi = sst > 25.0 ? 264.28 * (1 - Math.exp(-0.182 * (sst - 25.00))) : 0; // [保留]
         
+        const ohcSupport = clamp((updatedCyclone.ohcKjCm2 - 50) / 95, -0.45, 0.55);
+        mpi *= 1 + ohcSupport * 0.24;
+
         // ERC Logic
         switch (updatedCyclone.ercState) {
             case 'weakening':
+                updatedCyclone.isERCActive = true;
                 if (updatedCyclone.age < updatedCyclone.ercEndTime) {
-                    updatedCyclone.ercMpiReduction = Math.random() * 7 * Math.max(0,(updatedCyclone.intensity / 90)); 
+                    const ercProgress = updatedCyclone.ercDuration
+                        ? clamp((updatedCyclone.age - updatedCyclone.ercStartTime) / updatedCyclone.ercDuration, 0, 1)
+                        : 0;
+                    const peakPulse = Math.sin(ercProgress * Math.PI);
+                    updatedCyclone.ercMpiReduction = (1.5 + Math.random() * 4.5 + peakPulse * 5.5) * Math.max(0, (updatedCyclone.intensity / 100));
                     updatedCyclone.intensity -= updatedCyclone.ercMpiReduction;
                 }
-                updatedCyclone.circulationSize *= 1.015; 
+                updatedCyclone.circulationSize *= 1.018;
                 if (updatedCyclone.age >= updatedCyclone.ercEndTime) {
                     updatedCyclone.ercState = 'recovering';
                     const recoveryDuration = 2 + Math.floor(Math.random() * 8);
-                    updatedCyclone.ercEndTime = updatedCyclone.age + recoveryDuration * 3;
+                    updatedCyclone.ercStartTime = updatedCyclone.age;
+                    updatedCyclone.ercDuration = recoveryDuration * 3;
+                    updatedCyclone.ercEndTime = updatedCyclone.age + updatedCyclone.ercDuration;
                 }
                 break;
             case 'recovering':
-                updatedCyclone.circulationSize *= 0.995;
+                updatedCyclone.isERCActive = true;
+                updatedCyclone.circulationSize *= 0.998;
+                if (updatedCyclone.ohcKjCm2 >= 55 && totalShear < 22) {
+                    updatedCyclone.intensity += Math.random() * 1.8;
+                }
                 if (updatedCyclone.age >= updatedCyclone.ercEndTime) {
                     updatedCyclone.ercState = 'none';
+                    updatedCyclone.isERCActive = false;
                     updatedCyclone.ercMpiReduction = 0;
+                    updatedCyclone.ercDuration = 0;
                 }
                 break;
             default:
-                if (updatedCyclone.intensity > 96 && !isOverLand && !updatedCyclone.isTransitioning && Math.random() < 0.12) {
+                updatedCyclone.isERCActive = false;
+                const ercTriggerChance = 0.035
+                    + clamp((updatedCyclone.intensity - 95) / 90, 0, 0.16)
+                    + clamp((updatedCyclone.ohcKjCm2 - 70) / 450, 0, 0.07);
+                if (updatedCyclone.intensity > 96 && !isOverLand && !updatedCyclone.isTransitioning && Math.random() < ercTriggerChance) {
                     updatedCyclone.ercState = 'weakening';
                     const weakeningDuration = 4 + Math.floor(Math.random() * 10);
-                    updatedCyclone.ercEndTime = updatedCyclone.age + weakeningDuration * 3;
+                    updatedCyclone.ercStartTime = updatedCyclone.age;
+                    updatedCyclone.ercDuration = weakeningDuration * 3;
+                    updatedCyclone.ercEndTime = updatedCyclone.age + updatedCyclone.ercDuration;
                 }
                 break;
         }
@@ -745,6 +1001,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         }
         const avgEnvHumidity = envHumiditySum / samplePoints;
         const effectiveHumidity = (minEnvHumidity * 0.4) + (avgEnvHumidity * 0.6);
+        updatedCyclone.environmentHumidity = effectiveHumidity;
         let dryAirFactor = 0;
         if (effectiveHumidity < 60) {
             const sizeSensitivity = 600 - cyclone.circulationSize; 
@@ -786,8 +1043,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     updatedCyclone.circulationSize = Math.max(100, Math.min(updatedCyclone.circulationSize, 800));
     updatedCyclone.intensity = Math.max(10, updatedCyclone.intensity);
     
+    const maxMotionSpeed = updatedCyclone.isExtratropical ? 44 : 32;
+    updatedCyclone.speed = clamp(updatedCyclone.speed, 2, maxMotionSpeed);
+    updatedCyclone.motionWobble = clamp(
+        (Number.isFinite(updatedCyclone.motionWobble) ? updatedCyclone.motionWobble : 0) * 0.78 + (Math.random() - 0.5) * 3.8,
+        -11,
+        11
+    );
     const currentSpeed = Math.max(2, updatedCyclone.speed);
-    const finalStepDirection = updatedCyclone.direction + (Math.random() - 0.5) * 30;
+    const finalStepDirection = updatedCyclone.direction
+        + updatedCyclone.motionWobble
+        + Math.sin((updatedCyclone.age || 0) * 0.11 + (updatedCyclone.motionPhase || 0)) * 2.5;
     const angleRad = (90 - finalStepDirection) * (Math.PI / 180);
     const distanceDeg = currentSpeed * 3 * 1.852 / 111;
 
@@ -798,6 +1064,15 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.basin, 
         currentEnvPressure
     );
+    updatedCyclone.centralPressure = Math.round(currentCentralPressure);
+
+    const rainfall = calculateCycloneRainfall(updatedCyclone, month, globalTemp, totalShear);
+    updatedCyclone.rainRateMmHr = rainfall.centerRateMmHr;
+    updatedCyclone.rainShieldKm = rainfall.rainShieldKm;
+    updatedCyclone.rainTotalMm = Math.max(0, (updatedCyclone.rainTotalMm || 0) + rainfall.centerRateMmHr * 3);
+    updatedCyclone.maxRainRateMmHr = Math.max(updatedCyclone.maxRainRateMmHr || 0, rainfall.centerRateMmHr);
+    updatedCyclone.stormStructure = calculateStormStructure(updatedCyclone, totalShear);
+    updatedCyclone.rmwKm = updatedCyclone.stormStructure.rmwKm;
 
     // --- Wind Radii Calculation (Preserved) ---
     const RMW_KM = 5 + updatedCyclone.circulationSize * 0.15; 
@@ -853,7 +1128,22 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     let newLon = updatedCyclone.lon + distanceDeg * Math.cos(angleRad) / Math.cos(updatedCyclone.lat * Math.PI / 180);
     updatedCyclone.lon = normalizeLongitude(newLon); 
     updatedCyclone.lat = newLat;
-    updatedCyclone.track.push([updatedCyclone.lon, updatedCyclone.lat, updatedCyclone.intensity, updatedCyclone.isTransitioning, updatedCyclone.isExtratropical, updatedCyclone.circulationSize, updatedCyclone.isSubtropical, radii34, radii50, radii64, Math.round(currentCentralPressure)]);
+    updatedCyclone.track.push([
+        updatedCyclone.lon,
+        updatedCyclone.lat,
+        updatedCyclone.intensity,
+        updatedCyclone.isTransitioning,
+        updatedCyclone.isExtratropical,
+        updatedCyclone.circulationSize,
+        updatedCyclone.isSubtropical,
+        radii34,
+        radii50,
+        radii64,
+        Math.round(currentCentralPressure),
+        updatedCyclone.ohcKjCm2,
+        Math.round(updatedCyclone.rainTotalMm || 0),
+        updatedCyclone.ercState || 'none'
+    ]);
 
     if (updatedCyclone.intensity < 17 || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
         updatedCyclone.status = 'dissipated';

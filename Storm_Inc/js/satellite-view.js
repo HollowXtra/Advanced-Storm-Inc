@@ -38,6 +38,9 @@ const fragmentShaderSource = `
     // [新增] 不对称参数
     uniform float u_asym_strength;
     uniform float u_asym_dir;
+    uniform float u_outer_eyewall_radius;
+    uniform float u_outer_eyewall_strength;
+    uniform float u_rain_shield;
 
     float random(vec2 st) {
         return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -167,7 +170,16 @@ const fragmentShaderSource = `
             central_mass_value = central_mass_shape * (0.85 + internal_texture * 0.15);
         }
         
+        float outer_eyewall = exp(-pow((dist - u_outer_eyewall_radius) / 0.035, 2.0))
+                             * u_outer_eyewall_strength
+                             * (0.72 + 0.28 * fbm(uv * 10.0 + u_time * 0.18));
+        float rain_canopy = u_rain_shield
+                          * (1.0 - smoothstep(dynamic_storm_radius * 0.58, dynamic_storm_radius + 0.32, dist))
+                          * (0.35 + 0.65 * fbm(noise_uv * 0.8 + 4.0));
+
         noise_val = max(noise_val, central_mass_value);
+        noise_val = max(noise_val, outer_eyewall);
+        noise_val += rain_canopy * 0.18;
         float cloud_intensity = smoothstep(u_cloud_low, u_cloud_high, noise_val);
         vec3 color = nrl_color_ramp(cloud_intensity);
         float ir_val = max(0.1, pow(cloud_intensity*1.3, 1.2));
@@ -197,7 +209,10 @@ let currentParams = {
     hemisphere: 1.0, // [新增] 1.0 for NH, -1.0 for SH
     seed: Math.random() * 100,
     asymStrength: 0.0,
-    asymDir: 0.0
+    asymDir: 0.0,
+    outerEyewallRadius: 0.0,
+    outerEyewallStrength: 0.0,
+    rainShield: 0.0
 };
 
 export function resetSatelliteParams() {
@@ -213,7 +228,10 @@ export function resetSatelliteParams() {
         hemisphere: 1.0, // 默认为北半球
         seed: Math.random() * 100,
         asymStrength: Math.random() * 0.3, 
-        asymDir: Math.random() * 6.28
+        asymDir: Math.random() * 6.28,
+        outerEyewallRadius: 0.0,
+        outerEyewallStrength: 0.0,
+        rainShield: 0.0
     };
 }
 
@@ -253,6 +271,7 @@ export function initSatelliteView(canvasId) {
         "u_resolution", "u_time", "u_spiral_strength", "u_eye_radius", 
         "u_shape_distortion", "u_storm_radius", "u_central_mass_size", 
         "u_wind_shear_strength", "u_cloud_low", "u_cloud_high", "u_random_seed",
+        "u_outer_eyewall_radius", "u_outer_eyewall_strength", "u_rain_shield",
         "u_hemisphere", "u_asym_strength", "u_asym_dir", "u_grayscale" // [新增]
     ];
     uniformNames.forEach(name => {
@@ -276,7 +295,7 @@ export function setSatelliteGrayscale(enable) {
 }
 
 // 根据强度更新目标参数
-export function updateSatelliteView(intensityKnots, age, latitude, isExtratropical, isSubtropical, isLand = false, sst = 29, humidity = 75) { 
+export function updateSatelliteView(intensityKnots, age, latitude, isExtratropical, isSubtropical, isLand = false, sst = 29, humidity = 75, structure = {}) {
     if (intensityKnots == null || isNaN(intensityKnots)) intensityKnots = 0;
     if (latitude == null || isNaN(latitude)) latitude = 0;
     if (sst == null || isNaN(sst)) sst = 29;
@@ -290,7 +309,10 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         centralMass: 0.0, shear: 0.0, 
         cloudLow: 0.1, 
         cloudHigh: 0.8, // 默认值，会被覆盖
-        asymStrength: 0.0, asymDir: 0.0
+        asymStrength: 0.0, asymDir: 0.0,
+        outerEyewallRadius: 0.0,
+        outerEyewallStrength: 0.0,
+        rainShield: 0.0
     };
     let randomFactor = Math.random(); 
     let dynamicAsymStr = oscillate(0.25, 0.55, 0.5);
@@ -330,6 +352,35 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     } else { // Cat 5
         let dynamicEye = oscillate(-0.005, 0.015, 3.0);
         target.spiral = 2.5; target.eye = dynamicEye; target.distortion = Math.random()*0.30; target.stormRadius = 0.20; target.centralMass = Math.random()*0.05 + 0.05; target.shear = 0.00; target.asymStrength = dynamicAsymStr * 1.0; target.asymDir = dynamicAsymDir;
+    }
+
+    const ercState = structure?.ercState || 'none';
+    const ercProgress = Math.max(0, Math.min(1, Number(structure?.ercProgress || 0)));
+    const pinholeScore = Math.max(0, Math.min(1, Number(structure?.pinholeScore || 0)));
+    const secondaryEyewallKm = Number(structure?.secondaryEyewallRadiusKm || 0);
+    const eyeKm = Number(structure?.eyeRadiusKm || 0);
+    target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
+
+    if (pinholeScore > 0.55 && intensityKnots >= 96) {
+        target.eye = Math.max(0.006, target.eye * 0.42);
+        target.spiral += 0.25;
+        target.distortion *= 0.65;
+    } else if (eyeKm > 0 && intensityKnots >= 64) {
+        target.eye = Math.max(0.008, Math.min(0.085, eyeKm / 520));
+    }
+
+    if (ercState === 'weakening') {
+        target.outerEyewallRadius = Math.max(0.12, Math.min(0.34, (secondaryEyewallKm || 72) / 430));
+        target.outerEyewallStrength = 0.58 + ercProgress * 0.42;
+        target.eye = Math.max(0.003, target.eye * (0.72 - ercProgress * 0.36));
+        target.centralMass += 0.14;
+        target.stormRadius += 0.05;
+        target.distortion += 0.08;
+    } else if (ercState === 'recovering') {
+        target.outerEyewallRadius = Math.max(0.14, Math.min(0.36, (secondaryEyewallKm || 85) / 430));
+        target.outerEyewallStrength = Math.max(0.0, 0.55 * (1 - ercProgress));
+        target.eye = Math.max(target.eye, 0.035 + ercProgress * 0.035);
+        target.stormRadius += 0.04;
     }
 
     // ============================================================
@@ -405,6 +456,9 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     currentParams.cloudHigh = lerp(currentParams.cloudHigh, target.cloudHigh, smoothFactor);
     currentParams.asymStrength = lerp(currentParams.asymStrength, target.asymStrength, smoothFactor);
     currentParams.asymDir = lerp(currentParams.asymDir, target.asymDir, smoothFactor * 0.5);
+    currentParams.outerEyewallRadius = lerp(currentParams.outerEyewallRadius, target.outerEyewallRadius, smoothFactor);
+    currentParams.outerEyewallStrength = lerp(currentParams.outerEyewallStrength, target.outerEyewallStrength, smoothFactor);
+    currentParams.rainShield = lerp(currentParams.rainShield, target.rainShield, smoothFactor);
 }
 
 function render() {
@@ -436,6 +490,9 @@ function render() {
     gl.uniform1f(uniforms.u_hemisphere, currentParams.hemisphere);
     gl.uniform1f(uniforms.u_asym_strength, currentParams.asymStrength);
     gl.uniform1f(uniforms.u_asym_dir, currentParams.asymDir);
+    gl.uniform1f(uniforms.u_outer_eyewall_radius, currentParams.outerEyewallRadius);
+    gl.uniform1f(uniforms.u_outer_eyewall_strength, currentParams.outerEyewallStrength);
+    gl.uniform1f(uniforms.u_rain_shield, currentParams.rainShield);
     gl.uniform1f(uniforms.u_grayscale, isGrayscale ? 1.0 : 0.0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);

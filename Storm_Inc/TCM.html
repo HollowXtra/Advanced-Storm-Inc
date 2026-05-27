@@ -629,6 +629,57 @@
                             </div>
                         </div>
 
+                        <div id="impact-panel" class="grid grid-cols-2 gap-3">
+                            <div class="bg-red-950/25 p-2 border border-red-500/20">
+                                <div class="text-[9px] text-red-300 uppercase tracking-widest mb-1">Damage</div>
+                                <div id="damageCounter" class="font-mono font-bold text-red-100 text-lg leading-none">$0</div>
+                            </div>
+                            <div class="bg-slate-900/60 p-2 border border-white/10">
+                                <div class="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Deaths</div>
+                                <div id="deathCounter" class="font-mono font-bold text-white text-lg leading-none">0</div>
+                            </div>
+                        </div>
+
+                        <div id="hydro-panel" class="grid grid-cols-2 gap-3">
+                            <div class="bg-cyan-950/25 p-2 border border-cyan-500/20">
+                                <div class="text-[9px] text-cyan-300 uppercase tracking-widest mb-1">Rain Rate</div>
+                                <div id="rainRateCounter" class="font-mono font-bold text-cyan-100 text-lg leading-none">0 mm/h</div>
+                            </div>
+                            <div class="bg-blue-950/25 p-2 border border-blue-500/20">
+                                <div class="text-[9px] text-blue-300 uppercase tracking-widest mb-1">Storm Rain</div>
+                                <div id="stormRainCounter" class="font-mono font-bold text-blue-100 text-lg leading-none">0 mm</div>
+                            </div>
+                            <div class="bg-sky-950/25 p-2 border border-sky-500/20">
+                                <div class="text-[9px] text-sky-300 uppercase tracking-widest mb-1">City Rain</div>
+                                <div id="cityRainCounter" class="font-mono font-bold text-sky-100 text-sm leading-tight truncate">0 mm</div>
+                            </div>
+                            <div class="bg-teal-950/25 p-2 border border-teal-500/20">
+                                <div class="text-[9px] text-teal-300 uppercase tracking-widest mb-1">Water Level</div>
+                                <div id="surgeCounter" class="font-mono font-bold text-teal-100 text-lg leading-none">0.0 m</div>
+                            </div>
+                        </div>
+
+                        <div id="ocean-par-panel" class="grid grid-cols-2 gap-3">
+                            <div class="bg-emerald-950/25 p-2 border border-emerald-500/20">
+                                <div class="text-[9px] text-emerald-300 uppercase tracking-widest mb-1">OHC</div>
+                                <div id="ohcCounter" class="font-mono font-bold text-emerald-100 text-sm leading-tight">0 kJ/cm2</div>
+                            </div>
+                            <div class="bg-indigo-950/25 p-2 border border-indigo-500/20">
+                                <div class="text-[9px] text-indigo-300 uppercase tracking-widest mb-1">PAGASA</div>
+                                <div id="parStatus" class="font-mono font-bold text-slate-400 text-sm leading-tight truncate">--</div>
+                            </div>
+                        </div>
+
+                        <div id="warning-panel" class="bg-black/35 border border-white/10 p-2">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[9px] font-bold text-yellow-300 uppercase tracking-widest">TCV Warnings</span>
+                                <span id="warning-cycle" class="text-[9px] font-mono text-slate-500">--</span>
+                            </div>
+                            <div id="warning-list" class="space-y-1 text-[9px] font-mono text-slate-400">
+                                <div class="text-slate-600 uppercase tracking-widest">No active watches or warnings</div>
+                            </div>
+                        </div>
+
                         <div id="best-track-container" class="hidden mt-auto pt-2">
                             <div class="text-[9px] font-bold text-green-500 mb-1 flex justify-between items-center">
                                 <span data-t="atcf_stream">ATCF DATA STREAM</span>
@@ -762,6 +813,9 @@
                     </button>
                     <button id="toggleWindFieldButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-cyan-400 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="100m Level Wind">
                         <i class="fa-solid fa-right-left"></i>
+                    </button>
+                    <button id="toggleSteeringButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-cyan-400 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="Steering Currents">
+                        <i class="fa-solid fa-arrows-turn-right"></i>
                     </button>
                     <button id="togglePathButton" class="bg-slate-900 border border-slate-600 text-slate-300 hover:text-cyan-400 w-8 h-8 rounded-lg flex items-center justify-center transition-all text-xs" title="Forecast">
                         <i class="fa-solid fa-route"></i>

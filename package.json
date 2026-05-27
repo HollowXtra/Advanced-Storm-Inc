@@ -1,0 +1,52 @@
+{
+  "name": "advanced-storm-inc",
+  "version": "1.0.0",
+  "description": "Desktop Windows build of the STORM_INC tropical cyclone simulator.",
+  "main": "electron/main.cjs",
+  "author": "EnceladusCat",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack:win": "electron-builder --win --x64 --dir",
+    "build:win": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.enceladuscat.storminc",
+    "productName": "STORM_INC",
+    "copyright": "Copyright (c) 2026 EnceladusCat",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "Storm_Inc/**/*",
+      "README.md",
+      "DISCORD_OVERLAY.md",
+      "model.onnx",
+      "weather_mapping.json",
+      "sz_wind_data_updated.csv"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "executableName": "STORM_INC",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "STORM_INC"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1"
+  }
+}

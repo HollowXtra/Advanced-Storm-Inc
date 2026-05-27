@@ -6,6 +6,7 @@
 import { getSST, normalizeLongitude } from './utils.js';
 import { calculateSteering, updatePressureSystems } from './cyclone-model.js';
 import { calculateBackgroundHumidity } from './visualization.js';
+import { calculateOceanHeatContent } from './environment-model.js';
 
 // [辅助] 坐标清洗
 function wrap180(lon) {
@@ -107,6 +108,11 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                     if (sst >= 24.7) {
                         // 考虑湿度影响的 MPI
                         mpi = (15 + (sst - 24.7) * 24.7 - (75 - hum)) * (1.08 - 1/tempCyclone.lat); 
+                    }
+                    if (sst >= 24.7) {
+                        const ohc = calculateOceanHeatContent(tempCyclone.lat, tempCyclone.lon, cyclone.currentMonth || 8, globalTemp);
+                        const ohcSupport = Math.max(-0.45, Math.min(0.55, (ohc.ohcKjCm2 - 50) / 95));
+                        mpi *= 1 + ohcSupport * 0.18;
                     }
                     const safeShearU = Number.isFinite(shearU) ? shearU : 0;
                     const safeShearV = Number.isFinite(shearV) ? shearV : 0;

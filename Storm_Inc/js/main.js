@@ -14,6 +14,8 @@ import { initializeCyclone, initializePressureSystems, updatePressureSystems, up
 import { generatePathForecasts } from './forecast-models.js';
 // [修改] 引入新的历史强度图绘制函数
 import { drawMap, drawFinalPath, drawHistoricalIntensityChart, drawHumidityField, calculateBackgroundHumidity, calculateTotalHumidity, drawAllHistoryTracks, renderJTWCStyle, renderProbabilitiesStyle, drawStationGraph, renderPhaseSpace, startNewsAnimation, renderStationSynopticChart } from './visualization.js';
+import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, formatSurge, updateImpactState } from './impact-system.js';
+import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
 import { playClick, playToggleOn, playToggleOff, playStart, playError, playAlert, playUpgradeSound, playCat5Sound, toggleSFX } from './audio.js';
 
 const checkLandWrapper = (lon, lat) => {
@@ -53,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const togglePressureButton = document.getElementById('togglePressureButton');
     const toggleHumidityButton = document.getElementById('toggleHumidityButton');
     const toggleWindFieldButton = document.getElementById('toggleWindFieldButton');
+    const toggleSteeringButton = document.getElementById('toggleSteeringButton');
     const toggleWindRadiiButton = document.getElementById('toggleWindRadiiButton');
     const windRadiiLegend = document.getElementById('wind-radii-legend');
     const radarLegend = document.getElementById('radar-legend');
@@ -70,6 +73,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyBestTrackContainer = document.getElementById('history-best-track-container');
     const historyBestTrackData = document.getElementById('history-best-track-data');
     const downloadHistoryTrackButton = document.getElementById('downloadHistoryTrackButton');
+    const damageCounter = document.getElementById('damageCounter');
+    const deathCounter = document.getElementById('deathCounter');
+    const rainRateCounter = document.getElementById('rainRateCounter');
+    const stormRainCounter = document.getElementById('stormRainCounter');
+    const cityRainCounter = document.getElementById('cityRainCounter');
+    const surgeCounter = document.getElementById('surgeCounter');
+    const ohcCounter = document.getElementById('ohcCounter');
+    const parStatus = document.getElementById('parStatus');
+    const warningList = document.getElementById('warning-list');
+    const warningCycle = document.getElementById('warning-cycle');
     const mapContainer = d3.select("#map-container");
     const chartContainer = d3.select("#intensity-chart-container");
     const forecastContainer = document.getElementById('intensity-chart-section'); // [新增] 获取容器元素
@@ -234,13 +247,19 @@ document.addEventListener('DOMContentLoaded', () => {
         customLat: null,
         showPathPoints: false,
         showWindField: false,
+        showSteeringCurrents: false,
         history: [],
         simulationCount: 1,
         nextNameIndex: 0,
+        nextPagasaNameIndex: 0,
         selectedHistoryTrackData: '',
         lastFinalStats: null,
         currentSiteData: null,
         siteHistory: [],
+        impactState: createImpactState(),
+        warningAdvisory: { active: [], signature: '', issuedHour: null },
+        lastWarningBannerSignature: '',
+        lastParBannerSignature: '',
         isSiteSelected: false,
         idleRotation: Math.random() * 50
     };
@@ -414,7 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
             siteLon: state.siteLon,
             siteLat: state.siteLat,
             showPathPoints: state.showPathPoints,
-            showWindField: state.showWindField
+            showWindField: state.showWindField,
+            showSteeringCurrents: state.showSteeringCurrents
         });
     });
     // 封装折叠/展开函数
@@ -626,6 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // --- 辅助函数 ---
     function updateToggleButtonVisual(button, isActive) {
+        if (!button) return;
         if (isActive) {
             // 高亮状态: 更亮的背景, 亮青色文字, 青色边框
             button.classList.remove('bg-slate-900', 'text-slate-300', 'border-slate-600', 'hover:text-cyan-400');
@@ -873,6 +894,118 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 6000);
     }
 
+    function updateImpactPanel() {
+        if (damageCounter) {
+            damageCounter.textContent = formatDamage(state.impactState?.damageUsd || 0);
+        }
+        if (deathCounter) {
+            deathCounter.textContent = `${Math.max(0, Math.floor(state.impactState?.deaths || 0)).toLocaleString()}`;
+        }
+        if (rainRateCounter) {
+            rainRateCounter.textContent = `${Math.round(state.cyclone?.rainRateMmHr || 0)} mm/h`;
+        }
+        if (stormRainCounter) {
+            stormRainCounter.textContent = formatRain(state.cyclone?.rainTotalMm || 0);
+        }
+        if (cityRainCounter) {
+            const maxRain = state.impactState?.maxRainMm || 0;
+            const maxRainCity = state.impactState?.maxRainCity ? ` ${state.impactState.maxRainCity}` : '';
+            cityRainCounter.textContent = `${formatRain(maxRain)}${maxRainCity}`;
+        }
+        if (surgeCounter) {
+            surgeCounter.textContent = formatSurge(state.impactState?.maxSurgeM || 0);
+        }
+        if (ohcCounter) {
+            ohcCounter.textContent = `${Math.round(state.cyclone?.ohcKjCm2 || 0)} kJ/cm2`;
+        }
+        if (parStatus) {
+            if (state.cyclone?.basin === 'WPAC' && state.cyclone?.inPAR) {
+                const localName = state.cyclone.pagasaName ? state.cyclone.pagasaName.toUpperCase() : 'MONITORED';
+                parStatus.textContent = `${localName} IN PAR`;
+                parStatus.classList.remove('text-slate-400');
+                parStatus.classList.add('text-cyan-300');
+            } else {
+                parStatus.textContent = state.cyclone?.basin === 'WPAC' ? 'OUTSIDE PAR' : '--';
+                parStatus.classList.add('text-slate-400');
+                parStatus.classList.remove('text-cyan-300');
+            }
+        }
+    }
+
+    function updateWarningPanel() {
+        if (!warningList) return;
+
+        const warnings = state.warningAdvisory?.active || [];
+        if (warningCycle) {
+            warningCycle.textContent = state.warningAdvisory?.issuedHour != null ? `T+${state.warningAdvisory.issuedHour}h` : '--';
+        }
+
+        if (warnings.length === 0) {
+            warningList.innerHTML = '<div class="text-slate-600 uppercase tracking-widest">No active watches or warnings</div>';
+            return;
+        }
+
+        warningList.innerHTML = warnings.slice(0, 5).map(warning => `
+            <div class="flex items-center justify-between gap-2 bg-white/5 border border-white/5 px-2 py-1">
+                <span class="truncate" style="color:${warning.color}">${warning.shortLabel}</span>
+                <span class="text-slate-200 truncate text-right">${warning.city}</span>
+                <span class="text-slate-500">${Math.round(warning.hours)}H</span>
+            </div>
+        `).join('');
+    }
+
+    function refreshWarningAdvisory(force = false) {
+        if (!state.cyclone || state.cyclone.status !== 'active') {
+            state.warningAdvisory = { active: [], signature: '', issuedHour: null };
+            updateWarningPanel();
+            return;
+        }
+
+        const currentHour = state.cyclone.age || 0;
+        const isAdvisoryCycle = currentHour % 6 === 0;
+        if (!force && !isAdvisoryCycle) return;
+
+        const nextAdvisory = buildWarningAdvisory(state.cyclone, state.pathForecasts, state.warningAdvisory);
+        nextAdvisory.issuedHour = currentHour;
+        state.warningAdvisory = nextAdvisory;
+        updateWarningPanel();
+
+        if (!nextAdvisory.changed || nextAdvisory.active.length === 0) return;
+        if (state.lastWarningBannerSignature === nextAdvisory.signature) return;
+
+        state.lastWarningBannerSignature = nextAdvisory.signature;
+        const topWarning = nextAdvisory.active[0];
+        const affectedCount = nextAdvisory.active.length;
+        const headlineHTML = `TCV UPDATE: <span class="text-white text-base align-middle not-italic ml-2 font-bold">${topWarning.label.toUpperCase()} ISSUED</span>`;
+        triggerNewsBanner(headlineHTML, `${affectedCount} ACTIVE WATCH/WARNING AREA${affectedCount === 1 ? '' : 'S'}`, currentHour, state.currentMonth, topWarning.priority >= 4 ? 'RED' : 'ORANGE');
+    }
+
+    function updatePagasaNaming() {
+        if (!state.cyclone || state.cyclone.status !== 'active' || state.cyclone.basin !== 'WPAC') {
+            return;
+        }
+
+        const wasInPAR = !!state.cyclone.inPAR;
+        const nowInPAR = pointInPAR(state.cyclone.lon, state.cyclone.lat);
+        state.cyclone.inPAR = nowInPAR;
+
+        if (!nowInPAR) return;
+
+        if (!state.cyclone.pagasaName && state.cyclone.intensity >= 25 && !state.cyclone.isExtratropical) {
+            state.cyclone.pagasaName = getPagasaName(state.nextPagasaNameIndex, 1);
+            state.nextPagasaNameIndex++;
+            state.cyclone.parEnteredHour = state.cyclone.age || 0;
+        }
+
+        const localName = state.cyclone.pagasaName || 'MONITORED SYSTEM';
+        const signature = `${localName}:${state.cyclone.parEnteredHour ?? state.cyclone.age}`;
+        if (!wasInPAR && state.lastParBannerSignature !== signature) {
+            state.lastParBannerSignature = signature;
+            const headlineHTML = `PAGASA: <span class="text-white text-base align-middle not-italic ml-2 font-bold">${localName.toUpperCase()} ENTERED PAR</span>`;
+            triggerNewsBanner(headlineHTML, 'SEVERE WEATHER BULLETIN DOMAIN', state.cyclone.age || 0, state.currentMonth, 'ORANGE');
+        }
+    }
+
     function updateInfoPanel() {
         const cat = getCategory(state.cyclone.intensity, state.cyclone.isTransitioning, state.cyclone.isExtratropical, state.cyclone.isSubtropical);
         document.getElementById('simulationTime').textContent = `SIM T+${state.cyclone.age} 小时`;
@@ -970,6 +1103,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.cyclone.isSubtropical,
             isLand,
             currentSST,
+            effectiveHumidity,
+            state.cyclone.stormStructure || {},
             effectiveHumidity // <--- 使用加权后的湿度
         );
         
@@ -996,7 +1131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function updateMapInfoBox() {
+    function updateMapInfoBox() {
         const cat = getCategory(state.cyclone.intensity, state.cyclone.isTransitioning, state.cyclone.isExtratropical, state.cyclone.isSubtropical);
         document.getElementById('map-info-time').textContent = `T+${state.cyclone.age}h`;
         document.getElementById('map-info-intensity').textContent = `${cat.shortName} - ${state.cyclone.intensity.toFixed(0)}KT`;
@@ -1052,6 +1187,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // [新增] 计算雷达反射率并判断天气图标
             const dbz = calculateRadarDbz(state.siteLon, state.siteLat, state);
+            const rainAtSite = state.cyclone?.status === 'active'
+                ? estimateRainAtPoint(state.cyclone, state.siteLon, state.siteLat)
+                : { rateMmHr: 0 };
+            const siteWater = state.cyclone?.status === 'active'
+                ? estimateRainEnhancedSurge(state.cyclone, { lon: state.siteLon, lat: state.siteLat }, speedKt, rainAtSite.rateMmHr * 3)
+                : { totalWaterM: 0 };
             
             let weatherIcon = '<i class="fa-solid fa-sun text-yellow-500"></i>'; // 默认晴天
             const isNight = false; // 简化的昼夜逻辑，你可以扩展它
@@ -1119,6 +1260,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 displaySpeed: speedKt,
                 label: label, // 现在这是 HTML 字符串
                 dbz: dbz,     // 保存 dBZ 数值备用
+                rainRateMmHr: rainAtSite.rateMmHr || 0,
+                floodLevelM: siteWater.totalWaterM || 0,
                 pressure: localPressure,
                 isSelected: state.isSiteSelected
             };
@@ -1215,7 +1358,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 number: `${basinCode} ${cycloneNumStr}`,
                 peakWind: Math.round(peakWind),
                 minPressure: Math.round(minPressure),
-                ace: state.cyclone.ace.toFixed(2)
+                ace: state.cyclone.ace.toFixed(2),
+                damage: formatDamage(state.impactState?.damageUsd || 0),
+                deaths: Math.floor(state.impactState?.deaths || 0),
+                maxRain: formatRain(state.impactState?.maxRainMm || 0),
+                maxSurge: formatSurge(state.impactState?.maxSurgeM || 0)
             };
             state.lastFinalStats = finalStats;
 
@@ -1254,7 +1401,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     cycloneData: cycloneDataDeep,
                     atcfData: bestTrackText,
                     pressureHistory: JSON.parse(JSON.stringify(state.pressureHistory || [])),
-                    siteHistory: JSON.parse(JSON.stringify(state.siteHistory || []))
+                    siteHistory: JSON.parse(JSON.stringify(state.siteHistory || [])),
+                    impactState: JSON.parse(JSON.stringify(state.impactState || createImpactState())),
+                    warningAdvisory: JSON.parse(JSON.stringify(state.warningAdvisory || { active: [] }))
                 });
                 state.simulationCount++;
             } catch (e) {
@@ -1266,6 +1415,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.pressureSystems = updatePressureSystems(state.pressureSystems, state.cyclone.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.cyclone = updateCycloneState(state.cyclone, state.pressureSystems, state.frontalZone, state.world, state.currentMonth, state.GlobalTemp, state.GlobalShear, state.nextNameIndex);
+        updatePagasaNaming();
+        updateImpactState(state.impactState, state.cyclone);
         state.cyclone.currentMonth = state.currentMonth;
         if (state.cyclone.status === 'active') {
             // 为了节省内存，我们只存 keyframe (比如对应 track 的每一个点)
@@ -1359,6 +1510,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         updateInfoPanel();
         updateMapInfoBox();
+        updateImpactPanel();
         updateStateSiteData();
 
         // 存入历史 (保持原有逻辑，因为这里是随时间推进的)
@@ -1376,6 +1528,8 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     v: state.currentSiteData.v,
                     // 天气数据
                     dbz: state.currentSiteData.dbz,
+                    rainRateMmHr: state.currentSiteData.rainRateMmHr || 0,
+                    floodLevelM: state.currentSiteData.floodLevelM || 0,
                     // 记录当时的站点位置，以防用户后来改了位置导致数据错位
                     lat: state.siteLat,
                     lon: state.siteLon
@@ -1385,6 +1539,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         drawMap(mapSvg, mapProjection, state.world, state.cyclone, {
             pathForecasts: state.pathForecasts,
+            warnings: state.warningAdvisory.active,
             pressureSystems: state.pressureSystems,
             showPressureField: state.showPressureField,
             showHumidityField: state.showHumidityField,
@@ -1395,6 +1550,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             siteLat: state.siteLat,
             showPathPoints: state.showPathPoints,
             showWindField: state.showWindField,
+            showSteeringCurrents: state.showSteeringCurrents,
             month: state.currentMonth,
             siteHistory: state.siteHistory,
             siteData: state.currentSiteData,
@@ -1412,6 +1568,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                  state.cyclone.forecastLogs[state.cyclone.age] = JSON.parse(JSON.stringify(forecasts));
              }
         }
+        refreshWarningAdvisory();
         if (state.cyclone.track.length > 3) {
             generateJTWCButton.classList.remove('hidden');
         }
@@ -1426,6 +1583,12 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         state.hasTriggeredCat1News = false;
         state.hasTriggeredCat5News = false;
         state.siteHistory = []; 
+        state.impactState = createImpactState();
+        state.warningAdvisory = { active: [], signature: '', issuedHour: null };
+        state.lastWarningBannerSignature = '';
+        state.lastParBannerSignature = '';
+        updateImpactPanel();
+        updateWarningPanel();
         state.pressureHistory = [];
         state.isSiteSelected = false;
         state.selectedHistoryCyclone = null;
@@ -1478,9 +1641,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         
         state.pathForecasts = generatePathForecasts(state.cyclone, state.pressureSystems, checkLandWrapper, state.GlobalTemp, state.GlobalShear);
-        updateToggleButtonVisual(togglePressureButton, state.showPressureField);
+        refreshWarningAdvisory(true);
+        updateToggleButtonVisual(togglePressureButton, state.showPressureField);
         updateToggleButtonVisual(toggleWindRadiiButton, state.showWindRadii);
         updateToggleButtonVisual(togglePathButton, state.showPathForecast);
+        updateToggleButtonVisual(toggleSteeringButton, state.showSteeringCurrents);
         state.simulationInterval = setInterval(updateSimulation, state.simulationSpeed);
     }
     
@@ -1528,6 +1693,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     
                 drawMap(mapSvg, mapProjection, state.world, state.cyclone, {
                     pathForecasts: forecasts,
+                    warnings: state.warningAdvisory.active,
                     pressureSystems: state.pressureSystems,
                     showPressureField: showPressure,
                     showHumidityField: showHumidity,
@@ -1538,6 +1704,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     siteLat: state.siteLat,
                     showPathPoints: state.showPathPoints,
                     showWindField: showWindField,
+                    showSteeringCurrents: isCycloneActive && state.showSteeringCurrents,
                     month: state.currentMonth,
                     siteHistory: state.siteHistory,
                     siteData: siteDataToPass,
@@ -1741,6 +1908,10 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             selectedCyclone.pressureHistory = historyItem.pressureHistory || [];
             selectedCyclone.siteHistory = historyItem.siteHistory || [];
             state.selectedHistoryCyclone = selectedCyclone;
+            state.impactState = historyItem.impactState || createImpactState();
+            state.warningAdvisory = historyItem.warningAdvisory || { active: [], signature: '', issuedHour: null };
+            updateImpactPanel();
+            updateWarningPanel();
 
             if (state.simulationInterval) {
                 clearInterval(state.simulationInterval);
@@ -1882,6 +2053,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     document.getElementById('togglePressureButton').onclick = () => toggleState('showPressureField', 'togglePressureButton');
     document.getElementById('toggleHumidityButton').onclick = () => toggleState('showHumidityField', 'toggleHumidityButton');
     document.getElementById('toggleWindFieldButton').onclick = () => toggleState('showWindField', 'toggleWindFieldButton');
+    document.getElementById('toggleSteeringButton').onclick = () => toggleState('showSteeringCurrents', 'toggleSteeringButton');
     document.getElementById('togglePathButton').onclick = () => toggleState('showPathForecast', 'togglePathButton');
 
     // 对于带图例的特殊处理 (Wind Radii)
@@ -1985,6 +2157,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                  updateStateSiteData();
                  drawMap(mapSvg, mapProjection, state.world, state.cyclone, {
                      pathForecasts: state.pathForecasts,
+                     warnings: state.warningAdvisory.active,
                      pressureSystems: state.pressureSystems,
                      showPressureField: state.showPressureField,
                      showHumidityField: state.showHumidityField,
@@ -1995,6 +2168,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                      siteLat: state.siteLat,
                      showPathPoints: state.showPathPoints,
                      showWindField: state.showWindField,
+                     showSteeringCurrents: state.showSteeringCurrents,
                      month: state.currentMonth,
                      siteHistory: state.siteHistory,
                      siteData: state.currentSiteData,

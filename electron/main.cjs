@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { registerMultiplayerIpc, stopSession } = require('./multiplayer.cjs');
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -114,6 +115,7 @@ function createMainWindow() {
             const generateButton = document.getElementById('generateButton');
             const baseReady = document.title.includes('STORM_INC')
               && window.stormIncDesktop?.isDesktop === true
+              && !!window.stormIncDesktop?.multiplayer
               && !!document.getElementById('map-container')
               && !!document.getElementById('satCanvas')
               && !!generateButton;
@@ -139,6 +141,8 @@ function createMainWindow() {
               && !!document.getElementById('rainRateCounter')
               && !!document.getElementById('investIdCounter')
               && !!document.getElementById('yearSelector')
+              && !!document.getElementById('multiplayerButton')
+              && !!document.getElementById('mpChatInput')
               && !!document.querySelector('#basinSelector option[value="MED"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
@@ -151,6 +155,7 @@ function createMainWindow() {
             const result = {
               title: document.title,
               hasDesktopBridge: window.stormIncDesktop?.isDesktop === true,
+              hasMultiplayerBridge: !!window.stormIncDesktop?.multiplayer,
               hasMapContainer: !!document.getElementById('map-container'),
               hasSatelliteCanvas: !!document.getElementById('satCanvas'),
               hasGenerateButton: !!generateButton,
@@ -161,6 +166,7 @@ function createMainWindow() {
               hasInvestPanel: !!document.getElementById('investIdCounter') && !!document.getElementById('investChance7Counter'),
               hasYearSelector: !!document.getElementById('yearSelector'),
               selectedYear: document.getElementById('yearSelector')?.value || '',
+              hasMultiplayerPanel: !!document.getElementById('multiplayerButton') && !!document.getElementById('mpChatInput'),
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               hasOhcCounter: !!document.getElementById('ohcCounter'),
@@ -229,6 +235,7 @@ function createMainWindow() {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   registerAppProtocol();
+  registerMultiplayerIpc();
   createMainWindow();
 
   app.on('activate', () => {
@@ -239,6 +246,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopSession({ quiet: true });
   if (process.platform !== 'darwin') {
     app.quit();
   }

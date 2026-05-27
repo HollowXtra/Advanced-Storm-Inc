@@ -39,6 +39,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const closeHelpModal = document.getElementById('closeHelpModal');
     const sfxButton = document.getElementById('sfxButton');
     const sfxIcon = sfxButton.querySelector('i');
+    const multiplayerButton = document.getElementById('multiplayerButton');
+    const multiplayerPanel = document.getElementById('multiplayerPanel');
+    const mpCloseButton = document.getElementById('mpCloseButton');
+    const mpStatusText = document.getElementById('mpStatusText');
+    const mpNameInput = document.getElementById('mpNameInput');
+    const mpHostInput = document.getElementById('mpHostInput');
+    const mpPortInput = document.getElementById('mpPortInput');
+    const mpHostButton = document.getElementById('mpHostButton');
+    const mpConnectButton = document.getElementById('mpConnectButton');
+    const mpDisconnectButton = document.getElementById('mpDisconnectButton');
+    const mpRoomAddress = document.getElementById('mpRoomAddress');
+    const mpPeerCount = document.getElementById('mpPeerCount');
+    const mpRemoteAge = document.getElementById('mpRemoteAge');
+    const mpRemoteSummary = document.getElementById('mpRemoteSummary');
+    const mpChatLog = document.getElementById('mpChatLog');
+    const mpChatInput = document.getElementById('mpChatInput');
+    const mpSendButton = document.getElementById('mpSendButton');
     const irBwCheckbox = document.getElementById('irBwCheckbox');
     const basinSelector = document.getElementById('basinSelector');
     const monthSelector = document.getElementById('monthSelector');
@@ -116,6 +133,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedSiteLon = localStorage.getItem('tcs_site_lon');
     const savedSiteLat = localStorage.getItem('tcs_site_lat');
     const savedSimYear = localStorage.getItem('tcs_sim_year');
+    const savedMpName = localStorage.getItem('tcs_mp_name');
+    const savedMpHost = localStorage.getItem('tcs_mp_host');
+    const savedMpPort = localStorage.getItem('tcs_mp_port');
     const currentCalendarYear = new Date().getFullYear();
     const SIM_YEAR_MIN = 1851;
     const SIM_YEAR_MAX = 2200;
@@ -283,6 +303,15 @@ document.addEventListener('DOMContentLoaded', () => {
         lastParBannerSignature: '',
         lastInvestBannerSignature: '',
         nextInvestNumbers: {},
+        multiplayer: {
+            mode: 'offline',
+            connected: false,
+            address: '',
+            port: parseInt(savedMpPort || '37219', 10),
+            peers: [],
+            remoteCyclone: null,
+            lastSnapshotKey: ''
+        },
         isSiteSelected: false,
         idleRotation: Math.random() * 50
     };
@@ -292,6 +321,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (savedSiteName) siteNameInput.value = savedSiteName;
     if (savedSiteLon) siteLonInput.value = savedSiteLon;
     if (savedSiteLat) siteLatInput.value = savedSiteLat;
+    if (mpNameInput) mpNameInput.value = savedMpName || `Tracker${Math.floor(Math.random() * 90 + 10)}`;
+    if (mpHostInput) mpHostInput.value = savedMpHost || '127.0.0.1';
+    if (mpPortInput) mpPortInput.value = String(state.multiplayer.port || 37219);
     if (yearSelector) {
         yearSelector.min = String(SIM_YEAR_MIN);
         yearSelector.max = String(SIM_YEAR_MAX);
@@ -357,6 +389,193 @@ document.addEventListener('DOMContentLoaded', () => {
             || cyclone?.investId
             || '';
         return displayId ? `INVEST ${displayId}` : 'INVEST';
+    }
+
+    function getMultiplayerApi() {
+        return window.stormIncDesktop?.multiplayer || null;
+    }
+
+    function getMultiplayerName() {
+        return (mpNameInput?.value || 'Tracker').trim().slice(0, 24) || 'Tracker';
+    }
+
+    function getMultiplayerPort() {
+        const parsed = parseInt(mpPortInput?.value || '37219', 10);
+        return Number.isFinite(parsed) ? Math.min(65535, Math.max(1024, parsed)) : 37219;
+    }
+
+    function getMultiplayerRemoteCyclone() {
+        return state.multiplayer?.remoteCyclone || null;
+    }
+
+    function appendMultiplayerMessage(entry) {
+        if (!mpChatLog) return;
+        const row = document.createElement('div');
+        const time = new Date(entry.time || Date.now());
+        const stamp = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+
+        if (entry.kind === 'chat') {
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'text-slate-600';
+            timeSpan.textContent = stamp;
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'text-cyan-300 font-bold';
+            nameSpan.textContent = ` ${entry.from || 'Player'}: `;
+            const textSpan = document.createElement('span');
+            textSpan.className = 'text-slate-200';
+            textSpan.textContent = entry.text || '';
+            row.append(timeSpan, nameSpan, textSpan);
+        } else {
+            row.className = 'text-slate-500 italic';
+            row.textContent = `${stamp} ${entry.text || ''}`;
+        }
+
+        mpChatLog.appendChild(row);
+        while (mpChatLog.children.length > 80) {
+            mpChatLog.removeChild(mpChatLog.firstChild);
+        }
+        mpChatLog.scrollTop = mpChatLog.scrollHeight;
+    }
+
+    function updateMultiplayerPanel() {
+        const supported = !!getMultiplayerApi();
+        const mp = state.multiplayer;
+
+        if (multiplayerButton) {
+            multiplayerButton.classList.toggle('text-cyan-400', supported && mp.connected);
+            multiplayerButton.classList.toggle('border-cyan-400/50', supported && mp.connected);
+        }
+
+        if (mpStatusText) {
+            if (!supported) {
+                mpStatusText.textContent = 'Desktop multiplayer unavailable';
+                mpStatusText.className = 'text-[9px] font-mono text-red-400 uppercase tracking-widest';
+            } else if (mp.mode === 'host') {
+                mpStatusText.textContent = `Hosting on port ${mp.port}`;
+                mpStatusText.className = 'text-[9px] font-mono text-emerald-300 uppercase tracking-widest';
+            } else if (mp.mode === 'client') {
+                mpStatusText.textContent = `Joined ${mp.address || 'room'}`;
+                mpStatusText.className = 'text-[9px] font-mono text-cyan-300 uppercase tracking-widest';
+            } else {
+                mpStatusText.textContent = 'Offline';
+                mpStatusText.className = 'text-[9px] font-mono text-slate-500 uppercase tracking-widest';
+            }
+        }
+
+        if (mpPeerCount) {
+            const count = mp.mode === 'host' ? mp.peers.length : (mp.connected ? 1 : 0);
+            mpPeerCount.textContent = `${count} peer${count === 1 ? '' : 's'}`;
+        }
+
+        if (mpRoomAddress) {
+            if (mp.mode === 'host') {
+                mpRoomAddress.textContent = `Give people this address: ${mp.address || '127.0.0.1'}:${mp.port}`;
+            } else if (mp.mode === 'client') {
+                mpRoomAddress.textContent = `Connected to ${mp.address || mpHostInput?.value || 'host'}:${mp.port}`;
+            } else {
+                mpRoomAddress.textContent = supported ? 'Start hosting or join a room.' : 'Use the Windows desktop app for multiplayer.';
+            }
+        }
+
+        const remote = mp.remoteCyclone;
+        if (mpRemoteAge) {
+            mpRemoteAge.textContent = remote ? `T+${remote.age || 0}H` : '--';
+        }
+        if (mpRemoteSummary) {
+            if (remote) {
+                const name = (remote.displayName || remote.name || remote.basin || 'STORM').toUpperCase();
+                const pressure = remote.pressure ? `${remote.pressure} hPa` : '-- hPa';
+                mpRemoteSummary.textContent = `${name} ${Math.round(remote.intensity || 0)}KT ${pressure} @ ${Number(remote.lat || 0).toFixed(1)}, ${Number(remote.lon || 0).toFixed(1)}`;
+            } else {
+                mpRemoteSummary.textContent = mp.mode === 'client' ? 'Waiting for host storm data.' : 'Host a running simulation to sync storm data.';
+            }
+        }
+    }
+
+    function applyMultiplayerStatus(status) {
+        if (!status) return;
+        state.multiplayer.mode = status.mode || 'offline';
+        state.multiplayer.connected = !!status.connected;
+        state.multiplayer.address = status.mode === 'host'
+            ? `${status.address || '127.0.0.1'}`
+            : (status.host || state.multiplayer.address || '');
+        state.multiplayer.port = status.port || state.multiplayer.port || 37219;
+        state.multiplayer.peers = status.peers || [];
+        if (state.multiplayer.mode === 'offline') {
+            state.multiplayer.remoteCyclone = null;
+            requestRedraw();
+        }
+        updateMultiplayerPanel();
+    }
+
+    function buildMultiplayerSnapshot() {
+        if (!state.cyclone || !state.cyclone.track || state.cyclone.track.length === 0) return null;
+        const basin = state.cyclone.basin || basinSelector.value || 'WPAC';
+        const cycloneNum = String(state.simulationCount).padStart(2, '0');
+        const centerEnvP = getPressureAt(state.cyclone.lon, state.cyclone.lat, state.pressureSystems);
+        const pressure = Math.round(windToPressure(state.cyclone.intensity, state.cyclone.circulationSize, basin, centerEnvP));
+        const track = state.cyclone.track.slice(-180).map(point => [
+            Number(point[0].toFixed(2)),
+            Number(point[1].toFixed(2)),
+            Math.round(point[2] || 0),
+            !!point[3],
+            !!point[4],
+            Math.round(point[5] || 0),
+            !!point[6]
+        ]);
+
+        return {
+            basin,
+            name: state.cyclone.name || '',
+            displayName: getCycloneHeadlineName(state.cyclone, cycloneNum),
+            status: state.cyclone.status || 'active',
+            age: state.cyclone.age || 0,
+            month: state.currentMonth,
+            year: state.currentYear,
+            lon: Number(state.cyclone.lon.toFixed(2)),
+            lat: Number(state.cyclone.lat.toFixed(2)),
+            intensity: Math.round(state.cyclone.intensity || 0),
+            pressure,
+            category: getCycloneCategoryLabel(state.cyclone, getCategory(state.cyclone.intensity, state.cyclone.isTransitioning, state.cyclone.isExtratropical, state.cyclone.isSubtropical)),
+            track
+        };
+    }
+
+    function broadcastMultiplayerState(force = false) {
+        const api = getMultiplayerApi();
+        if (!api || state.multiplayer.mode !== 'host' || !state.multiplayer.connected) return;
+        const snapshot = buildMultiplayerSnapshot();
+        if (!snapshot) return;
+
+        const shouldSendOnCycle = snapshot.age % 6 === 0;
+        const snapshotKey = `${snapshot.status}:${snapshot.age}:${snapshot.intensity}:${snapshot.lat}:${snapshot.lon}:${snapshot.track.length}`;
+        if (!force && (!shouldSendOnCycle || state.multiplayer.lastSnapshotKey === snapshotKey)) return;
+
+        state.multiplayer.lastSnapshotKey = snapshotKey;
+        api.sendState({ snapshot }).catch(error => {
+            appendMultiplayerMessage({ kind: 'system', text: `Sync failed: ${error.message || error}`, time: Date.now() });
+        });
+    }
+
+    function handleMultiplayerEvent(event) {
+        if (!event) return;
+        if (event.kind === 'status') {
+            applyMultiplayerStatus(event);
+            return;
+        }
+        if (event.kind === 'chat') {
+            appendMultiplayerMessage(event);
+            return;
+        }
+        if (event.kind === 'system') {
+            appendMultiplayerMessage(event);
+            return;
+        }
+        if (event.kind === 'state') {
+            state.multiplayer.remoteCyclone = event.snapshot || null;
+            updateMultiplayerPanel();
+            requestRedraw();
+        }
     }
 
     function getCycloneHeadlineName(cyclone, fallbackNumber) {
@@ -536,7 +755,8 @@ document.addEventListener('DOMContentLoaded', () => {
             siteLat: state.siteLat,
             showPathPoints: state.showPathPoints,
             showWindField: state.showWindField,
-            showSteeringCurrents: state.showSteeringCurrents
+            showSteeringCurrents: state.showSteeringCurrents,
+            remoteCyclone: getMultiplayerRemoteCyclone()
         });
     });
     // 封装折叠/展开函数
@@ -1583,6 +1803,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
                     impactState: JSON.parse(JSON.stringify(state.impactState || createImpactState())),
                     warningAdvisory: JSON.parse(JSON.stringify(state.warningAdvisory || { active: [] }))
                 });
+                broadcastMultiplayerState(true);
                 state.simulationCount++;
             } catch (e) {
                 console.error("无法保存历史记录:", e);
@@ -1739,6 +1960,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             month: state.currentMonth,
             siteHistory: state.siteHistory,
             siteData: state.currentSiteData,
+            remoteCyclone: getMultiplayerRemoteCyclone(),
             onSiteClick: () => { 
                 state.isSiteSelected = !state.isSiteSelected;
                 requestRedraw();
@@ -1754,6 +1976,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
              }
         }
         refreshWarningAdvisory();
+        broadcastMultiplayerState();
         if (state.cyclone.track.length > 3) {
             generateJTWCButton.classList.remove('hidden');
         }
@@ -1855,6 +2078,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
         
         state.pathForecasts = generatePathForecasts(state.cyclone, state.pressureSystems, checkLandWrapper, state.GlobalTemp, state.GlobalShear);
+        broadcastMultiplayerState(true);
         refreshInvestOutlook(true);
         refreshWarningAdvisory(true);
         updateToggleButtonVisual(togglePressureButton, state.showPressureField);
@@ -1923,6 +2147,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     month: state.currentMonth,
                     siteHistory: state.siteHistory,
                     siteData: siteDataToPass,
+                    remoteCyclone: getMultiplayerRemoteCyclone(),
                     onSiteClick: onSiteClickCallback,
                     isPaused: state.isPaused,
                     // [新增] 删除回调
@@ -2048,10 +2273,94 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
     // [初始化]
     initMusicPlaylist();
+    updateMultiplayerPanel();
+    const multiplayerApi = getMultiplayerApi();
+    if (multiplayerApi) {
+        multiplayerApi.onEvent(handleMultiplayerEvent);
+        multiplayerApi.getStatus().then(applyMultiplayerStatus).catch(() => {});
+    } else if (mpChatInput) {
+        appendMultiplayerMessage({ kind: 'system', text: 'Multiplayer is available in the Windows desktop app.', time: Date.now() });
+    }
 
     // --- 事件监听器 ---
     generateButton.addEventListener('click', startSimulation);
     pauseButton.addEventListener('click', togglePause);
+
+    if (multiplayerButton && multiplayerPanel) {
+        multiplayerButton.addEventListener('click', () => {
+            playClick();
+            multiplayerPanel.classList.toggle('hidden');
+        });
+    }
+    if (mpCloseButton && multiplayerPanel) {
+        mpCloseButton.addEventListener('click', () => multiplayerPanel.classList.add('hidden'));
+    }
+    if (mpHostButton) {
+        mpHostButton.addEventListener('click', async () => {
+            const api = getMultiplayerApi();
+            if (!api) return;
+            const name = getMultiplayerName();
+            const port = getMultiplayerPort();
+            localStorage.setItem('tcs_mp_name', name);
+            localStorage.setItem('tcs_mp_port', String(port));
+            try {
+                const status = await api.startHost({ name, port });
+                applyMultiplayerStatus(status);
+                broadcastMultiplayerState(true);
+            } catch (error) {
+                appendMultiplayerMessage({ kind: 'system', text: `Host failed: ${error.message || error}`, time: Date.now() });
+            }
+        });
+    }
+    if (mpConnectButton) {
+        mpConnectButton.addEventListener('click', async () => {
+            const api = getMultiplayerApi();
+            if (!api) return;
+            const name = getMultiplayerName();
+            const host = (mpHostInput?.value || '127.0.0.1').trim();
+            const port = getMultiplayerPort();
+            localStorage.setItem('tcs_mp_name', name);
+            localStorage.setItem('tcs_mp_host', host);
+            localStorage.setItem('tcs_mp_port', String(port));
+            try {
+                const status = await api.connect({ name, host, port });
+                applyMultiplayerStatus(status);
+            } catch (error) {
+                appendMultiplayerMessage({ kind: 'system', text: `Join failed: ${error.message || error}`, time: Date.now() });
+            }
+        });
+    }
+    if (mpDisconnectButton) {
+        mpDisconnectButton.addEventListener('click', async () => {
+            const api = getMultiplayerApi();
+            if (!api) return;
+            const status = await api.disconnect();
+            applyMultiplayerStatus(status);
+        });
+    }
+    const sendMultiplayerChat = async () => {
+        const api = getMultiplayerApi();
+        const text = (mpChatInput?.value || '').trim();
+        if (!api || !text) return;
+        mpChatInput.value = '';
+        try {
+            const status = await api.sendChat({ text });
+            applyMultiplayerStatus(status);
+        } catch (error) {
+            appendMultiplayerMessage({ kind: 'system', text: `Send failed: ${error.message || error}`, time: Date.now() });
+        }
+    };
+    if (mpSendButton) {
+        mpSendButton.addEventListener('click', sendMultiplayerChat);
+    }
+    if (mpChatInput) {
+        mpChatInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMultiplayerChat();
+            }
+        });
+    }
 
     downloadTrackButton.addEventListener('click', () => {
         const text = bestTrackData.value;
@@ -2407,6 +2716,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                      month: state.currentMonth,
                      siteHistory: state.siteHistory,
                      siteData: state.currentSiteData,
+                     remoteCyclone: getMultiplayerRemoteCyclone(),
                      onSiteClick: () => {
                          state.isSiteSelected = !state.isSiteSelected;
                          requestRedraw();

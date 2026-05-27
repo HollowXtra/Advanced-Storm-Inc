@@ -1183,6 +1183,78 @@ function drawStormGlyph(container, projection, cyclone) {
         .attr("vector-effect", "non-scaling-stroke");
 }
 
+function drawRemoteCycloneOverlay(layer, projection, remoteCyclone) {
+    layer.selectAll("*").remove();
+    if (!remoteCyclone || !remoteCyclone.track || remoteCyclone.track.length < 1) return;
+
+    const pathGenerator = d3.line()
+        .x(d => projection([d[0], d[1]])?.[0] ?? 0)
+        .y(d => projection([d[0], d[1]])?.[1] ?? 0)
+        .defined(d => !!projection([d[0], d[1]]));
+
+    const track = [];
+    let lastLon = NaN;
+    remoteCyclone.track.forEach(pointData => {
+        const point = [...pointData];
+        let lon = point[0];
+        if (!isNaN(lastLon) && Math.abs(lon - lastLon) > 180) {
+            lon += lon < lastLon ? 360 : -360;
+        }
+        point[0] = lon;
+        lastLon = lon;
+        track.push(point);
+    });
+
+    if (track.length > 1) {
+        layer.append("path")
+            .datum(track)
+            .attr("d", pathGenerator)
+            .attr("fill", "none")
+            .attr("stroke", "#22d3ee")
+            .attr("stroke-width", 2.5)
+            .attr("stroke-dasharray", "7 5")
+            .attr("stroke-opacity", 0.75)
+            .attr("vector-effect", "non-scaling-stroke")
+            .style("filter", "drop-shadow(0 0 6px rgba(34,211,238,0.65))");
+    }
+
+    const latest = track[track.length - 1];
+    const pos = projection([latest[0], latest[1]]);
+    if (!pos) return;
+
+    const displayName = (remoteCyclone.displayName || remoteCyclone.name || "MULTIPLAYER").toUpperCase();
+    const wind = Math.round(remoteCyclone.intensity || latest[2] || 0);
+    const marker = layer.append("g")
+        .attr("class", "multiplayer-storm-marker")
+        .attr("transform", `translate(${pos[0]},${pos[1]})`);
+
+    marker.append("circle")
+        .attr("r", 12)
+        .attr("fill", "rgba(34, 211, 238, 0.12)")
+        .attr("stroke", "#67e8f9")
+        .attr("stroke-width", 1.5)
+        .attr("vector-effect", "non-scaling-stroke");
+
+    marker.append("path")
+        .attr("d", "M 0 -8 L 8 0 L 0 8 L -8 0 Z")
+        .attr("fill", "#22d3ee")
+        .attr("stroke", "#ffffff")
+        .attr("stroke-width", 1)
+        .attr("vector-effect", "non-scaling-stroke");
+
+    marker.append("text")
+        .attr("x", 16)
+        .attr("y", -10)
+        .attr("font-family", "'JetBrains Mono', monospace")
+        .attr("font-size", 10)
+        .attr("font-weight", 800)
+        .attr("fill", "#cffafe")
+        .attr("stroke", "#020617")
+        .attr("stroke-width", 3)
+        .attr("paint-order", "stroke")
+        .text(`${displayName} ${wind}KT`);
+}
+
 export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     if (!world || !mapSvg) return;
 
@@ -1204,6 +1276,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         siteLat = null,
         siteData = null,
         siteHistory = [],
+        remoteCyclone = null,
         onSiteClick = null,
         isPaused = false,
         month = 8
@@ -1220,6 +1293,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         "layer-wind-radii",   // 风圈
         "layer-warnings",
         "layer-city-labels",
+        "layer-remote-cyclone",
         "layer-cyclone",      // 当前气旋图标
         "layer-pressure-handles",   // 压力系统控制手柄层
         "track-interaction-layer",
@@ -1245,6 +1319,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     const trackPointLayer = mapSvg.select(".layer-track-points");
     const windRadiiLayer = mapSvg.select(".layer-wind-radii");
     const warningsLayer = mapSvg.select(".layer-warnings");
+    const remoteCycloneLayer = mapSvg.select(".layer-remote-cyclone");
     const cycloneLayer = mapSvg.select(".layer-cyclone");
     const uiLayer = mapSvg.select(".layer-ui");
     const pressureHandlesLayer = mapSvg.select(".layer-pressure-handles");
@@ -1253,8 +1328,11 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     const pathGenerator = d3.geoPath().projection(mapProjection);
 
     // 3. 气旋中心定位逻辑 (仅在 active 状态且有坐标时执行)
-    if (cyclone && cyclone.status === 'active' && isFinite(cyclone.lon)) {
-        mapProjection.center([cyclone.lon, cyclone.lat]).translate([width / 2, height / 2]);
+    const focusCyclone = (cyclone && cyclone.status === 'active' && isFinite(cyclone.lon))
+        ? cyclone
+        : ((remoteCyclone && isFinite(remoteCyclone.lon) && isFinite(remoteCyclone.lat)) ? remoteCyclone : null);
+    if (focusCyclone) {
+        mapProjection.center([focusCyclone.lon, focusCyclone.lat]).translate([width / 2, height / 2]);
     }
 
     // ============================================================
@@ -1404,6 +1482,8 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     }
 
     // 9. 当前气旋图标 (Icon)
+    drawRemoteCycloneOverlay(remoteCycloneLayer, mapProjection, remoteCyclone);
+
     if (cyclone && cyclone.status === 'active') {
         const iconData = [cyclone];
         cycloneLayer.selectAll("circle")

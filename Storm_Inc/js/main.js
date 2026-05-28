@@ -185,6 +185,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let dopplerRenderer = null; // [新增] 多普勒渲染器实例
     let radarOverlayCtx = null; // 用于画圆圈和线的2D Canvas
     let radarOverlayCanvas = null;
+    window.stormIncDebug = {
+        getSnapshot: () => ({
+            cycloneStatus: state.cyclone?.status || '',
+            cycloneAge: Number(state.cyclone?.age || 0),
+            cycloneIntensity: Number(state.cyclone?.intensity || 0),
+            cycloneLat: Number.isFinite(state.cyclone?.lat) ? state.cyclone.lat : null,
+            cycloneLon: Number.isFinite(state.cyclone?.lon) ? state.cyclone.lon : null,
+            cycloneIsLand: !!state.cyclone?.isLand,
+            simulationRunning: !!state.simulationInterval,
+            visibleLandCount: document.querySelectorAll('.land').length
+        })
+    };
     const savedIrBw = localStorage.getItem('tcs_ir_bw') === 'true';
     if (irBwCheckbox) {
         irBwCheckbox.checked = savedIrBw;

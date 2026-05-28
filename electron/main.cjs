@@ -108,14 +108,26 @@ function createMainWindow() {
           const runSimulationSmoke = ${JSON.stringify(isSimulationSmokeTest)};
           const smokeBasin = ${JSON.stringify(process.env.STORM_INC_SMOKE_BASIN || '')};
           const smokeYear = ${JSON.stringify(process.env.STORM_INC_SMOKE_YEAR || '')};
+          const smokeMinAge = ${JSON.stringify(Number(process.env.STORM_INC_SMOKE_MIN_AGE || (isSimulationSmokeTest ? 36 : 0)))};
           const smokeErrors = [];
           window.addEventListener('error', (event) => smokeErrors.push(event.message || String(event.error || event)));
           window.addEventListener('unhandledrejection', (event) => smokeErrors.push(String(event.reason || event)));
           let clickedStart = false;
           let clickedSave = false;
+          const getSimulationAge = () => {
+            const text = document.getElementById('map-info-time')?.textContent
+              || document.getElementById('simulationTime')?.textContent
+              || '';
+            const match = text.match(/T\\+(\\d+)/i);
+            return match ? Number(match[1]) : 0;
+          };
 
           const check = () => {
             const generateButton = document.getElementById('generateButton');
+            const debugSnapshot = window.stormIncDebug?.getSnapshot?.() || {};
+            const simulationAge = Number(debugSnapshot.cycloneAge || getSimulationAge() || 0);
+            const activeMapInfo = debugSnapshot.cycloneStatus === 'active'
+              || !document.getElementById('map-info-box')?.classList.contains('hidden');
             const baseReady = document.title.includes('STORM_INC')
               && window.stormIncDesktop?.isDesktop === true
               && !!window.stormIncDesktop?.multiplayer
@@ -140,6 +152,7 @@ function createMainWindow() {
 
             const simulationReady = !runSimulationSmoke || (
               clickedStart
+              && (smokeMinAge <= 0 || (simulationAge >= smokeMinAge && activeMapInfo))
               && !document.getElementById('simulation-output')?.classList.contains('hidden')
               && !!document.getElementById('damageCounter')
               && !!document.getElementById('deathCounter')
@@ -197,6 +210,8 @@ function createMainWindow() {
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
               hasFictioniaBasin: !!document.querySelector('#basinSelector option[value="FICT"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
+              simulationAge,
+              survivedSmokeWindow: !runSimulationSmoke || (simulationAge >= smokeMinAge && activeMapInfo),
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),
               hasSteeringToggle: !!document.getElementById('toggleSteeringButton'),
@@ -206,6 +221,8 @@ function createMainWindow() {
               hasOceanFill: !!document.querySelector('.ocean-fill'),
               oceanFill: document.querySelector('.ocean-fill') ? getComputedStyle(document.querySelector('.ocean-fill')).fill : '',
               mapBackground: document.getElementById('map-container') ? getComputedStyle(document.getElementById('map-container')).backgroundColor : '',
+              visibleLandCount: document.querySelectorAll('.land').length,
+              debugSnapshot,
               smokeErrors
             };
 

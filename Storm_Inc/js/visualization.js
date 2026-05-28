@@ -2,14 +2,106 @@
  * visualization.js
  * 包含所有 D3.js 绘图函数。
  */
-import { getCategory, getPressureAt, windToPressure, directionToCompass, createGeoCircle, unwrapLongitude, calculateHollandPressure, getSST, calculateDistance } from './utils.js';
+import { getCategory, getPressureAt, windToPressure, directionToCompass, createGeoCircle, unwrapLongitude, calculateHollandPressure, getSST, calculateDistance, normalizeLongitude, shortestLongitudeDistance } from './utils.js';
 import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
-import { FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_CREDIT, FICTIONIA_WATER_FEATURES, isFictioniaBasin } from './fictionia-map.js';
+import { FICTIONIA_BASIN, FICTIONIA_BOUNDS, FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_CREDIT, FICTIONIA_WATER_FEATURES, isFictioniaBasin } from './fictionia-map.js';
 
 const MAP_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
+const OCEAN_FILL = '#0a3a66';
+const BASIN_RENDER_WINDOWS = {
+    WPAC: { lon: 142, lat: 15, lonSpan: 122, latSpan: 70 },
+    EPAC: { lon: -118, lat: 14, lonSpan: 116, latSpan: 62 },
+    NATL: { lon: -58, lat: 21, lonSpan: 132, latSpan: 76 },
+    NIO: { lon: 80, lat: 15, lonSpan: 74, latSpan: 52 },
+    SHEM: { lon: 166, lat: -12, lonSpan: 98, latSpan: 52 },
+    SIO: { lon: 82, lat: -13, lonSpan: 132, latSpan: 52 },
+    SATL: { lon: -24, lat: -18, lonSpan: 88, latSpan: 48 },
+    MED: { lon: 16, lat: 36.5, lonSpan: 66, latSpan: 34 },
+    [FICTIONIA_BASIN]: {
+        lon: (FICTIONIA_BOUNDS.lon.min + FICTIONIA_BOUNDS.lon.max) / 2,
+        lat: (FICTIONIA_BOUNDS.lat.min + FICTIONIA_BOUNDS.lat.max) / 2,
+        lonSpan: (FICTIONIA_BOUNDS.lon.max - FICTIONIA_BOUNDS.lon.min) + 12,
+        latSpan: (FICTIONIA_BOUNDS.lat.max - FICTIONIA_BOUNDS.lat.min) + 12,
+        fictionOnly: true
+    }
+};
+const featureBoundsCache = new WeakMap();
+
+function getFeatureBounds(feature) {
+    if (!feature || typeof feature !== 'object') return null;
+    if (featureBoundsCache.has(feature)) return featureBoundsCache.get(feature);
+
+    let bounds = null;
+    try {
+        const rawBounds = d3.geoBounds(feature);
+        if (rawBounds && rawBounds[0] && rawBounds[1]) {
+            bounds = {
+                west: normalizeLongitude(rawBounds[0][0]),
+                south: rawBounds[0][1],
+                east: normalizeLongitude(rawBounds[1][0]),
+                north: rawBounds[1][1]
+            };
+        }
+    } catch (_error) {
+        bounds = null;
+    }
+
+    featureBoundsCache.set(feature, bounds);
+    return bounds;
+}
+
+function longitudeInWindow(lon, centerLon, halfSpan) {
+    return Math.abs(shortestLongitudeDistance(normalizeLongitude(lon), normalizeLongitude(centerLon))) <= halfSpan;
+}
+
+function getRenderWindow(activeBasin, focusCyclone, performanceProfile = {}) {
+    const base = BASIN_RENDER_WINDOWS[activeBasin] || null;
+    if (focusCyclone && Number.isFinite(focusCyclone.lon) && Number.isFinite(focusCyclone.lat)) {
+        const activeSpan = performanceProfile.mobile ? { lonSpan: 92, latSpan: 58 } : { lonSpan: 126, latSpan: 76 };
+        return {
+            ...(base || {}),
+            lon: focusCyclone.lon,
+            lat: focusCyclone.lat,
+            lonSpan: Math.max(activeSpan.lonSpan, base?.lonSpan || 0),
+            latSpan: Math.max(activeSpan.latSpan, base?.latSpan || 0),
+            fictionOnly: base?.fictionOnly || false
+        };
+    }
+
+    return base;
+}
+
+function featureIntersectsWindow(feature, renderWindow) {
+    if (!renderWindow) return true;
+    const isFictioniaFeature = !!feature?.properties?.fictionia;
+    if (renderWindow.fictionOnly) return isFictioniaFeature;
+    if (isFictioniaFeature) return false;
+
+    const bounds = getFeatureBounds(feature);
+    if (!bounds) return true;
+
+    const halfLat = renderWindow.latSpan / 2;
+    if (bounds.north < renderWindow.lat - halfLat || bounds.south > renderWindow.lat + halfLat) {
+        return false;
+    }
+
+    const halfLon = renderWindow.lonSpan / 2;
+    const lonMid = normalizeLongitude(bounds.west + shortestLongitudeDistance(bounds.east, bounds.west) / 2);
+    return longitudeInWindow(bounds.west, renderWindow.lon, halfLon)
+        || longitudeInWindow(bounds.east, renderWindow.lon, halfLon)
+        || longitudeInWindow(lonMid, renderWindow.lon, halfLon);
+}
+
+function getVisibleLandFeatures(world, activeBasin, focusCyclone, performanceProfile = {}) {
+    if (!world?.features) return [];
+    const renderWindow = getRenderWindow(activeBasin, focusCyclone, performanceProfile);
+    return renderWindow
+        ? world.features.filter(feature => featureIntersectsWindow(feature, renderWindow))
+        : world.features;
+}
 
 function getSimulationYear(cyclone) {
     const parsed = parseInt(cyclone?.currentYear, 10);
@@ -151,7 +243,7 @@ function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible
         .join('path')
         .attr('class', 'fictionia-water')
         .attr('d', pathGenerator)
-        .attr('fill', '#02072d')
+        .attr('fill', OCEAN_FILL)
         .attr('stroke', '#f8fafc')
         .attr('stroke-width', 0.75)
         .attr('stroke-opacity', 0.95)
@@ -1400,6 +1492,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     if (focusCyclone) {
         mapProjection.center([focusCyclone.lon, focusCyclone.lat]).translate([width / 2, height / 2]);
     }
+    const visibleLandFeatures = getVisibleLandFeatures(world, activeBasin, focusCyclone, profile);
 
     // ============================================================
     // 3. [修复核心] 静态背景绘制逻辑
@@ -1414,9 +1507,10 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         .attr("y", 0)
         .attr("width", width)
         .attr("height", height)
+        .attr("fill", OCEAN_FILL)
         .lower();
 
-    if (staticLayer.select(".land").empty()) {
+    if (staticLayer.select(".graticule").empty()) {
         // 绘制经纬网容器
         staticLayer.append("path")
             .datum(d3.geoGraticule().step([10, 10]))
@@ -1426,7 +1520,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         staticLayer.append("g")
             .attr("class", "land-group") //以此 Group 为容器
             .selectAll("path")
-            .data(world.features)
+            .data(visibleLandFeatures)
             .enter().append("path")
             .attr("class", "land")
             .style("stroke", "none");
@@ -1436,6 +1530,9 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // 虽然有些消耗，但比 remove() + append() 快得多
     staticLayer.select(".graticule").attr("d", pathGenerator);
     staticLayer.select(".land-group").selectAll(".land")
+        .data(visibleLandFeatures)
+        .join("path")
+        .attr("class", "land")
         .attr("d", pathGenerator)
         .style("fill", d => d.properties?.fictionia ? "#030303" : null)
         .style("stroke", d => d.properties?.fictionia ? "#f8fafc" : null)

@@ -18,7 +18,7 @@ const basinConfig = {
     'SIO':  { lon: { min: 30,  max: 140 }, lat: { min: -15, max: -5 } },
     'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } },
     'MED': { lon: { min: -5.5, max: 36 }, lat: { min: 31, max: 41.5 } },
-    [FICTIONIA_BASIN]: { lon: { min: -101, max: -86 }, lat: { min: 10, max: 24 } }
+    [FICTIONIA_BASIN]: { lon: { min: -97, max: -86 }, lat: { min: 7, max: 23 } }
 };
 
 const genesisProfiles = {
@@ -64,9 +64,9 @@ const genesisProfiles = {
         { weight: 0.45, lon: 20.5, lonSpread: 5.0, lat: 35.2, latSpread: 2.0, peaks: [1, 2, 12], motion: { direction: 70, spread: 60, speed: 5.8 } }
     ],
     [FICTIONIA_BASIN]: [
-        { weight: 2.6, lon: -92.5, lonSpread: 4.2, lat: 15.5, latSpread: 3.0, peaks: [7, 8, 9], motion: { direction: 294, spread: 24, speed: 9.5 } },
-        { weight: 1.8, lon: -98.0, lonSpread: 3.0, lat: 12.5, latSpread: 2.4, peaks: [8, 9, 10], motion: { direction: 314, spread: 26, speed: 8.5 } },
-        { weight: 1.1, lon: -88.5, lonSpread: 2.2, lat: 20.0, latSpread: 2.8, peaks: [9, 10], motion: { direction: 282, spread: 30, speed: 10.5 } }
+        { weight: 2.6, lon: -89.0, lonSpread: 2.8, lat: 14.5, latSpread: 2.8, peaks: [7, 8, 9], motion: { direction: 28, spread: 32, speed: 7.5 } },
+        { weight: 1.8, lon: -93.5, lonSpread: 2.4, lat: 8.8, latSpread: 2.0, peaks: [8, 9, 10], motion: { direction: 308, spread: 28, speed: 6.8 } },
+        { weight: 1.1, lon: -87.8, lonSpread: 1.8, lat: 19.0, latSpread: 2.4, peaks: [9, 10], motion: { direction: 18, spread: 34, speed: 7.2 } }
     ]
 };
 
@@ -106,6 +106,13 @@ function clamp(value, min, max) {
 
 function isMedicaneBasin(cycloneOrBasin) {
     return (typeof cycloneOrBasin === 'string' ? cycloneOrBasin : cycloneOrBasin?.basin) === 'MED';
+}
+
+function getGenesisProtectionHours(cycloneOrBasin) {
+    const basin = typeof cycloneOrBasin === 'string' ? cycloneOrBasin : cycloneOrBasin?.basin;
+    if (basin === 'MED') return 48;
+    if (basin === FICTIONIA_BASIN) return 72;
+    return 60;
 }
 
 function calculateStormStructure(cyclone, totalShear = 0) {
@@ -405,11 +412,12 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
     return {
         lat: lat,
         lon: lon,
-        intensity: (isMedicane ? 21.5 : 23) + Math.random() * (isMedicane ? 3.5 : 2),
+        intensity: (isMedicane ? 23 : 25) + Math.random() * (isMedicane ? 4.5 : 4),
         direction: initialMotion.direction,
         speed: initialMotion.speed,
         basin: basin,
         age: 0,
+        genesisProtectionUntil: getGenesisProtectionHours(basin),
         shearEventActive: false,
         shearEventEndTime: 0,
         shearEventMagnitude: 0,
@@ -969,6 +977,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
 
     updatedCyclone.isLand = isOverLand;
     const EXf = !updatedCyclone.isExtratropical ? 1 : 0.1;
+    const genesisProtectionUntil = Number.isFinite(Number(updatedCyclone.genesisProtectionUntil))
+        ? Number(updatedCyclone.genesisProtectionUntil)
+        : getGenesisProtectionHours(updatedCyclone);
+    updatedCyclone.genesisProtectionUntil = genesisProtectionUntil;
+    const genesisGraceActive = updatedCyclone.age <= genesisProtectionUntil
+        && !updatedCyclone.isExtratropical
+        && !updatedCyclone.isTransitioning;
+    const lowlandGraceActive = genesisGraceActive
+        && isOverLand
+        && terrainElevation < 140
+        && updatedCyclone.age <= Math.min(genesisProtectionUntil, 42);
 
     // --- Intensity Change (Strictly Preserved Coefficients) ---
     
@@ -1127,6 +1146,22 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         const clampedSize = Math.max(150, Math.min(500, currentSize));
         const sizeFactor = 1.2 + (clampedSize - 150) * (0.8 - 1.2) / (500 - 150);
         updatedCyclone.intensity += (potentialChange - sizeFactor * shear - dryAirFactor);
+    }
+
+    if (genesisGraceActive) {
+        const warmEnoughForGrace = (isMedicane ? sst >= 17.0 : sst >= 24.8) || lowlandGraceActive;
+        if (warmEnoughForGrace) {
+            const earlyFloor = lowlandGraceActive ? 18 : (isMedicane ? 20 : 22);
+            const maxEarlyWeakening = lowlandGraceActive ? 1.35 : (isMedicane ? 1.2 : 0.85);
+            updatedCyclone.intensity = Math.max(updatedCyclone.intensity, oldIntensity - maxEarlyWeakening, earlyFloor);
+
+            const oceanSupport = updatedCyclone.ohcKjCm2 >= (isMedicane ? 8 : 35);
+            const moistureSupport = Number(updatedCyclone.environmentHumidity || 0) >= 65;
+            const shearLimit = isMedicane ? 30 : 26;
+            if (!lowlandGraceActive && totalShear < shearLimit && (oceanSupport || moistureSupport)) {
+                updatedCyclone.intensity += 0.25;
+            }
+        }
     }
 
     // Extratropical Transition Trigger
@@ -1295,7 +1330,9 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.status = 'dissipated';
     }
 
-    if (updatedCyclone.intensity < 17 || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
+    const protectedFromEarlyDissipation = genesisGraceActive
+        && ((isMedicane ? sst >= 16.5 : sst >= 24.5) || lowlandGraceActive);
+    if ((!protectedFromEarlyDissipation && updatedCyclone.intensity < 17) || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
         updatedCyclone.status = 'dissipated';
     }
     

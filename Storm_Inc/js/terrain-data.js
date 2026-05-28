@@ -144,7 +144,7 @@ export function getLandStatus(lon, lat, nearThresholdDeg = 0.2) {
                 // 垂直方向不循环，直接夹断
                 if (ny < 0 || ny >= mapHeight) continue;
 
-                const idx = (ny * mapWidth + nx) * 4;
+                const idx = ny * mapWidth + nx;
                 if (landMaskData[idx] > 128) {
                     isNearLand = true;
                     break searchLoop; // 找到一个陆地像素即可停止

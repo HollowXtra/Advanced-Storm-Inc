@@ -41,6 +41,7 @@ const fragmentShaderSource = `
     uniform float u_outer_eyewall_radius;
     uniform float u_outer_eyewall_strength;
     uniform float u_rain_shield;
+    uniform float u_eyewall_wrap_strength;
 
     float random(vec2 st) {
         return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -157,31 +158,58 @@ const fragmentShaderSource = `
                                  * (0.5 + 0.5 * fbm(noise_uv * 3.0 + 2.0));
         noise_val += feeder_bands + inner_curved_bands * 0.075;
 
-        float wrap_score = smoothstep(0.09, 0.34, u_central_mass_size + u_rain_shield * 0.24 + max(u_eye_radius, 0.0) * 1.4);
+        float wrap_intensity = clamp(u_eyewall_wrap_strength, 0.0, 2.0);
+        float wrap_score = smoothstep(0.05, 0.24, u_central_mass_size + u_rain_shield * 0.36 + max(u_eye_radius, 0.0) * 1.8)
+                         * (0.48 + wrap_intensity * 0.92);
         float core_wrap_radius = max(0.045, abs(u_eye_radius) + 0.04 + u_central_mass_size * 0.08);
-        float core_wrap_width = mix(0.014, 0.032, wrap_score);
+        float core_wrap_width = mix(0.014, 0.05, clamp(wrap_score * 0.65, 0.0, 1.0));
         float eyewall_radial = exp(-pow((dist - core_wrap_radius) / core_wrap_width, 2.0));
-        float eyewall_arc_phase = spiral_angle * 9.0 + dist * 42.0 - u_time * 0.95 * u_hemisphere;
-        float eyewall_arc_gate = 0.48 + 0.52 * pow(max(0.0, 0.5 + 0.5 * cos(eyewall_arc_phase)), 1.45);
-        float eyewall_filament_phase = spiral_angle * 18.0 + dist * 74.0 - u_time * 1.35 * u_hemisphere;
-        float eyewall_filaments = pow(max(0.0, 0.5 + 0.5 * cos(eyewall_filament_phase)), 6.0);
+        float eyewall_arc_phase = spiral_angle * 11.0 + dist * 56.0 - u_time * 1.15 * u_hemisphere;
+        float eyewall_arc_gate = 0.34 + 0.66 * pow(max(0.0, 0.5 + 0.5 * cos(eyewall_arc_phase)), 1.18);
+        float eyewall_filament_phase = spiral_angle * 23.0 + dist * 94.0 - u_time * 1.7 * u_hemisphere;
+        float eyewall_filaments = pow(max(0.0, 0.5 + 0.5 * cos(eyewall_filament_phase)), 4.4);
         float wrap_texture = 0.58 + 0.42 * fbm(noise_uv * 3.8 + vec2(u_time * 0.12, -u_time * 0.08));
+        float closed_wrap_ring = eyewall_radial
+                               * wrap_score
+                               * (0.54 + 0.46 * wrap_texture)
+                               * (0.62 + 0.38 * eyewall_arc_gate);
+        float inner_hot_ring = exp(-pow((dist - (core_wrap_radius * 0.82)) / (core_wrap_width * 0.64), 2.0))
+                             * wrap_score
+                             * (0.52 + 0.48 * eyewall_filaments)
+                             * (0.78 + 0.22 * fbm(noise_uv * 5.0 + 9.0));
         float eyewall_wrap = eyewall_radial
                            * wrap_score
                            * wrap_texture
-                           * (0.58 * eyewall_arc_gate + 0.42 * eyewall_filaments)
+                           * (0.45 * eyewall_arc_gate + 0.55 * eyewall_filaments)
                            * (1.0 - smoothstep(dynamic_storm_radius * 0.62, dynamic_storm_radius + 0.1, dist));
 
-        float moat_radius = core_wrap_radius + 0.048 + u_rain_shield * 0.035;
-        float moat_ring = exp(-pow((dist - moat_radius) / 0.035, 2.0)) * wrap_score;
-        float moat_arc_phase = spiral_angle * 7.0 + dist * 28.0 + u_time * 0.45 * u_hemisphere;
-        float moat_arc_gate = pow(max(0.0, 0.5 + 0.5 * cos(moat_arc_phase)), 2.8);
+        float moat_radius = core_wrap_radius + 0.046 + u_rain_shield * 0.045;
+        float moat_ring = exp(-pow((dist - moat_radius) / mix(0.028, 0.052, clamp(wrap_intensity * 0.5, 0.0, 1.0)), 2.0)) * wrap_score;
+        float moat_arc_phase = spiral_angle * 8.5 + dist * 36.0 + u_time * 0.55 * u_hemisphere;
+        float moat_arc_gate = pow(max(0.0, 0.5 + 0.5 * cos(moat_arc_phase)), 2.05);
         float wrapping_inflow = moat_ring
                               * moat_arc_gate
                               * (0.5 + 0.5 * fbm(noise_uv * 2.7 + 7.0))
                               * (0.62 + 0.38 * smoothstep(-0.65, 0.85, asym_factor));
-        noise_val = max(noise_val, eyewall_wrap * 0.86);
-        noise_val += wrapping_inflow * 0.12;
+
+        float major_wrap_zone = smoothstep(core_wrap_radius + 0.012, core_wrap_radius + 0.09, dist)
+                              * (1.0 - smoothstep(dynamic_storm_radius * 0.92, dynamic_storm_radius + 0.2, dist));
+        float major_ribbon_phase = spiral_angle * 6.4 + dist * 34.0 - u_time * 0.88 * u_hemisphere;
+        float major_ribbon_wave = pow(max(0.0, 0.5 + 0.5 * cos(major_ribbon_phase)), 1.72);
+        float major_secondary_phase = spiral_angle * 14.8 + dist * 68.0 - u_time * 1.25 * u_hemisphere;
+        float major_secondary_wave = pow(max(0.0, 0.5 + 0.5 * cos(major_secondary_phase)), 3.55);
+        float tight_wrap_phase = spiral_angle * 20.0 + dist * 105.0 - u_time * 1.85 * u_hemisphere;
+        float tight_wrap_wave = pow(max(0.0, 0.5 + 0.5 * cos(tight_wrap_phase)), 5.0);
+        float wrapped_ribbons = major_wrap_zone
+                              * wrap_score
+                              * (0.45 * major_ribbon_wave + 0.36 * major_secondary_wave + 0.19 * tight_wrap_wave)
+                              * (0.48 + 0.52 * fbm(noise_uv * 2.2 + vec2(3.0, u_time * 0.1)))
+                              * (0.7 + 0.3 * smoothstep(-0.9, 0.75, asym_factor));
+        noise_val = max(noise_val, closed_wrap_ring * (0.82 + wrap_intensity * 0.16));
+        noise_val = max(noise_val, inner_hot_ring * (0.74 + wrap_intensity * 0.14));
+        noise_val = max(noise_val, eyewall_wrap * (0.96 + wrap_intensity * 0.22));
+        noise_val += wrapping_inflow * (0.15 + wrap_intensity * 0.07);
+        noise_val += wrapped_ribbons * (0.18 + wrap_intensity * 0.15);
         
         // 3. 中心云团 (CDO)
         float central_mass_value = 0.0;
@@ -230,9 +258,12 @@ const fragmentShaderSource = `
 
         noise_val = max(noise_val, central_mass_value * 0.86);
         noise_val = max(noise_val, outer_eyewall * 0.92);
-        noise_val = max(noise_val, eyewall_wrap * 0.9);
+        noise_val = max(noise_val, closed_wrap_ring * (0.88 + wrap_intensity * 0.18));
+        noise_val = max(noise_val, inner_hot_ring * (0.76 + wrap_intensity * 0.16));
+        noise_val = max(noise_val, eyewall_wrap * (1.02 + wrap_intensity * 0.2));
         noise_val += rain_canopy * 0.2;
-        noise_val += wrapping_inflow * 0.08;
+        noise_val += wrapping_inflow * (0.1 + wrap_intensity * 0.05);
+        noise_val += wrapped_ribbons * (0.14 + wrap_intensity * 0.1);
         float cloud_texture_gate = 0.82 + 0.18 * fbm(noise_uv * 2.4 + u_time * 0.2);
         noise_val *= cloud_texture_gate;
         noise_val = min(noise_val, 0.94);
@@ -269,7 +300,8 @@ let currentParams = {
     asymDir: 0.0,
     outerEyewallRadius: 0.0,
     outerEyewallStrength: 0.0,
-    rainShield: 0.0
+    rainShield: 0.0,
+    wrapStrength: 0.0
 };
 
 export function resetSatelliteParams() {
@@ -288,7 +320,8 @@ export function resetSatelliteParams() {
         asymDir: Math.random() * 6.28,
         outerEyewallRadius: 0.0,
         outerEyewallStrength: 0.0,
-        rainShield: 0.0
+        rainShield: 0.0,
+        wrapStrength: 0.0
     };
 }
 
@@ -328,7 +361,7 @@ export function initSatelliteView(canvasId) {
         "u_resolution", "u_time", "u_spiral_strength", "u_eye_radius", 
         "u_shape_distortion", "u_storm_radius", "u_central_mass_size", 
         "u_wind_shear_strength", "u_cloud_low", "u_cloud_high", "u_random_seed",
-        "u_outer_eyewall_radius", "u_outer_eyewall_strength", "u_rain_shield",
+        "u_outer_eyewall_radius", "u_outer_eyewall_strength", "u_rain_shield", "u_eyewall_wrap_strength",
         "u_hemisphere", "u_asym_strength", "u_asym_dir", "u_grayscale" // [新增]
     ];
     uniformNames.forEach(name => {
@@ -369,7 +402,8 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         asymStrength: 0.0, asymDir: 0.0,
         outerEyewallRadius: 0.0,
         outerEyewallStrength: 0.0,
-        rainShield: 0.0
+        rainShield: 0.0,
+        wrapStrength: 0.0
     };
     let randomFactor = Math.random(); 
     let dynamicAsymStr = oscillate(0.25, 0.55, 0.5);
@@ -436,11 +470,23 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         ? 0.34 + bandingMaturity * 0.22
         : (intensityKnots >= 64 ? 0.26 + bandingMaturity * 0.2 : (intensityKnots >= 34 ? 0.16 : 0.06));
     target.rainShield = Math.max(0, Math.min(1, rainShieldKm > 0 ? rainShieldKm / 950 : fallbackRainShield));
+    const hurricaneWrapBase = intensityKnots >= 113
+        ? 1.18
+        : (intensityKnots >= 96 ? 0.95 : (intensityKnots >= 64 ? 0.58 : (intensityKnots >= 34 ? 0.26 : 0.06)));
+    target.wrapStrength = Math.max(0, Math.min(2.0,
+        hurricaneWrapBase
+        + bandingMaturity * 0.34
+        + eyeMaturity * 0.24
+        + eyewallIntegrity * 0.22
+        + microwaveRingScore * 0.2
+        + (intensityKnots >= 137 ? 0.25 : 0)
+    ));
 
     if (pinholeScore > 0.55 && intensityKnots >= 96 && eyeMaturity > 0.64) {
         target.eye = Math.max(0.006, target.eye * 0.42);
         target.spiral += 0.25;
         target.distortion *= 0.65;
+        target.wrapStrength += 0.22;
     } else if (eyeKm > 0 && intensityKnots >= 64 && eyeMaturity > 0.18) {
         target.eye = Math.max(0.006, Math.min(0.085, eyeKm / 520) * (0.35 + eyeMaturity * 0.65));
     }
@@ -467,11 +513,13 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.centralMass += 0.14;
         target.stormRadius += 0.05;
         target.distortion += 0.08;
+        target.wrapStrength += 0.15;
     } else if (ercState === 'recovering') {
         target.outerEyewallRadius = Math.max(0.14, Math.min(0.36, (secondaryEyewallKm || 85) / 430));
         target.outerEyewallStrength = Math.max(0.0, 0.55 * (1 - ercProgress));
         target.eye = Math.max(target.eye, 0.035 + ercProgress * 0.035);
         target.stormRadius += 0.04;
+        target.wrapStrength += 0.18;
     }
 
     if (eyeClosing > 0.05 && intensityKnots >= 64) {
@@ -494,17 +542,20 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.eye = Math.max(0.004, target.eye * 0.38);
         target.distortion *= 0.48;
         target.centralMass += 0.06;
+        target.wrapStrength += 0.32;
     } else if (shapeFamily === 'polygonal-eye') {
         target.spiral += 0.16 + eyewallSpinRate / 2400;
         target.distortion += 0.08 + polygonalEyeScore * 0.15;
         target.centralMass += 0.04;
         target.asymStrength += mesovortexCount * 0.035;
+        target.wrapStrength += 0.22 + polygonalEyeScore * 0.18;
     } else if (shapeFamily === 'concentric-eyewall') {
         target.outerEyewallRadius = Math.max(target.outerEyewallRadius, 0.17 + moatScore * 0.12);
         target.outerEyewallStrength = Math.max(target.outerEyewallStrength, 0.56 + moatScore * 0.32);
         target.centralMass += 0.16;
         target.distortion += 0.08;
         target.stormRadius += 0.08;
+        target.wrapStrength += 0.26 + moatScore * 0.16;
     } else if (shapeFamily === 'hot-tower') {
         target.spiral += 0.18;
         target.centralMass += 0.08 + hotTowerPotential * 0.08;
@@ -549,11 +600,14 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     if (eyewallIntegrity > 0.55 && intensityKnots >= 64) {
         target.spiral += eyewallSpinRate / 3600;
         target.distortion += (1 - eyewallIntegrity) * 0.08;
+        target.wrapStrength += Math.min(0.28, eyewallSpinRate / 2600);
     }
     if (intensityKnots >= 64 && !isExtratropical && !isSubtropical) {
         target.centralMass = Math.min(target.centralMass, 0.24);
         target.stormRadius = Math.min(target.stormRadius, 0.37);
         target.cloudLow = Math.max(target.cloudLow, 0.135);
+        target.wrapStrength = Math.max(target.wrapStrength, intensityKnots >= 96 ? 1.28 : 0.82);
+        target.wrapStrength = Math.min(target.wrapStrength, 2.0);
     }
 
     // ============================================================
@@ -632,6 +686,7 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     currentParams.outerEyewallRadius = lerp(currentParams.outerEyewallRadius, target.outerEyewallRadius, smoothFactor);
     currentParams.outerEyewallStrength = lerp(currentParams.outerEyewallStrength, target.outerEyewallStrength, smoothFactor);
     currentParams.rainShield = lerp(currentParams.rainShield, target.rainShield, smoothFactor);
+    currentParams.wrapStrength = lerp(currentParams.wrapStrength, target.wrapStrength, smoothFactor);
 }
 
 function render() {
@@ -666,6 +721,7 @@ function render() {
     gl.uniform1f(uniforms.u_outer_eyewall_radius, currentParams.outerEyewallRadius);
     gl.uniform1f(uniforms.u_outer_eyewall_strength, currentParams.outerEyewallStrength);
     gl.uniform1f(uniforms.u_rain_shield, currentParams.rainShield);
+    gl.uniform1f(uniforms.u_eyewall_wrap_strength, currentParams.wrapStrength);
     gl.uniform1f(uniforms.u_grayscale, isGrayscale ? 1.0 : 0.0);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);

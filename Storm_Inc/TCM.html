@@ -306,6 +306,22 @@
             box-shadow: 0 0 25px rgba(34, 211, 238, 0.15) !important;
             z-index: 100 !important;
         }
+        #satellite-window {
+            aspect-ratio: 16 / 9;
+            cursor: grab;
+            flex-shrink: 0;
+            min-height: 176px;
+            touch-action: none;
+        }
+        #satellite-window.satellite-window-floating {
+            position: fixed !important;
+            margin: 0 !important;
+            min-height: 140px;
+            z-index: 95 !important;
+        }
+        #satellite-window.satellite-window-floating:not(.hidden) {
+            display: block;
+        }
         .titlepage {
           margin-left: 20px; /* 增加左外边距，将元素向右推20px */
         }
@@ -1028,6 +1044,10 @@
                         <span class="text-[9px] font-mono font-bold text-red-500 tracking-widest uppercase" data-t="sat_feed">SAT_FEED_LIVE</span>
                     </div>
                     
+                    <button id="reset-sat-position-btn" class="absolute top-2 right-8 z-50 text-cyan-500 hover:text-cyan-300 transition-colors opacity-0 group-hover:opacity-100 p-1 cursor-pointer pointer-events-auto" title="Reset Position">
+                        <i class="fa-solid fa-arrows-to-dot text-sm"></i>
+                    </button>
+
                     <button id="close-sat-btn" onclick="collapseSat()" class="absolute top-2 right-2 z-50 text-red-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1 cursor-pointer pointer-events-auto" title="Collapse View">
                         <i class="fa-solid fa-xmark text-lg"></i>
                     </button>
@@ -1845,7 +1865,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // 使元素可拖拽的函数
-            function makeDraggable(elementId) {
+            function makeDraggable(elementId, options = {}) {
                 const element = document.getElementById(elementId);
                 if (!element) return;
 
@@ -1856,6 +1876,104 @@
                 let initialY;
                 let xOffset = 0;
                 let yOffset = 0;
+                let startPointerX = 0;
+                let startPointerY = 0;
+                let startLeft = 0;
+                let startTop = 0;
+                const persistKey = options.persistKey || null;
+                const fixedOnDrag = !!options.fixedOnDrag;
+                const resetButton = options.resetButtonId ? document.getElementById(options.resetButtonId) : null;
+                const homeParent = element.parentNode;
+                const homeNextSibling = element.nextSibling;
+                const interactiveSelector = 'button, input, select, textarea, a, [data-no-drag]';
+                const viewportMargin = 8;
+
+                function getClientPoint(e) {
+                    if (e.type.startsWith('touch')) {
+                        const touch = e.touches?.[0] || e.changedTouches?.[0];
+                        return touch ? { x: touch.clientX, y: touch.clientY } : null;
+                    }
+                    return { x: e.clientX, y: e.clientY };
+                }
+
+                function clampFloatingPosition(left, top, width, height) {
+                    const usableWidth = Math.max(viewportMargin, window.innerWidth - width - viewportMargin);
+                    const usableHeight = Math.max(viewportMargin, window.innerHeight - height - viewportMargin);
+                    return {
+                        left: Math.min(Math.max(left, viewportMargin), usableWidth),
+                        top: Math.min(Math.max(top, viewportMargin), usableHeight)
+                    };
+                }
+
+                function applyFloatingPosition(left, top, width, height) {
+                    if (element.parentNode !== document.body) {
+                        document.body.appendChild(element);
+                    }
+                    const maxWidth = Math.max(180, window.innerWidth - (viewportMargin * 2));
+                    const maxHeight = Math.max(140, window.innerHeight - (viewportMargin * 2));
+                    const nextWidth = Math.min(Math.max(width || 320, 180), maxWidth);
+                    const nextHeight = Math.min(Math.max(height || nextWidth, 140), maxHeight);
+                    const clamped = clampFloatingPosition(left, top, nextWidth, nextHeight);
+                    element.classList.add('satellite-window-floating');
+                    element.style.transform = 'none';
+                    element.style.left = `${clamped.left}px`;
+                    element.style.top = `${clamped.top}px`;
+                    element.style.width = `${nextWidth}px`;
+                    element.style.height = `${nextHeight}px`;
+                }
+
+                function saveFloatingPosition() {
+                    if (!persistKey || !fixedOnDrag) return;
+                    const rect = element.getBoundingClientRect();
+                    localStorage.setItem(persistKey, JSON.stringify({
+                        left: rect.left,
+                        top: rect.top,
+                        width: rect.width,
+                        height: rect.height
+                    }));
+                }
+
+                function restoreFloatingPosition() {
+                    if (!persistKey || !fixedOnDrag) return;
+                    try {
+                        const saved = JSON.parse(localStorage.getItem(persistKey) || 'null');
+                        if (!saved) return;
+                        applyFloatingPosition(
+                            Number(saved.left) || viewportMargin,
+                            Number(saved.top) || viewportMargin,
+                            Number(saved.width) || 320,
+                            Number(saved.height) || 320
+                        );
+                    } catch {
+                        localStorage.removeItem(persistKey);
+                    }
+                }
+
+                function resetFloatingPosition(e) {
+                    e?.stopPropagation();
+                    if (persistKey) localStorage.removeItem(persistKey);
+                    element.classList.remove('satellite-window-floating', 'draggable-active');
+                    element.style.left = '';
+                    element.style.top = '';
+                    element.style.width = '';
+                    element.style.height = '';
+                    element.style.transform = '';
+                    if (homeParent && element.parentNode !== homeParent) {
+                        homeParent.insertBefore(element, homeNextSibling);
+                    }
+                }
+
+                if (resetButton) {
+                    resetButton.addEventListener('click', resetFloatingPosition);
+                }
+
+                restoreFloatingPosition();
+                window.addEventListener('resize', () => {
+                    if (!fixedOnDrag || !element.classList.contains('satellite-window-floating')) return;
+                    const rect = element.getBoundingClientRect();
+                    applyFloatingPosition(rect.left, rect.top, rect.width, rect.height);
+                    saveFloatingPosition();
+                });
 
                 // 统一监听父元素，但通过 target 判断是否是手柄区域（如果需要更精确控制）
                 // 这里为了体验流畅，允许整个容器拖拽，但排除了 Input/Button
@@ -1864,18 +1982,26 @@
 
                 function dragStart(e) {
                     // 允许点击子元素（例如按钮），不触发拖拽
-                    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA' || e.target.closest('button')) return;
+                    if (e.target.closest(interactiveSelector)) return;
                     
                     // 如果点击的是图表内容本身(SVG)，允许拖拽，但如果是交互元素则需小心
                     // 此处默认允许
 
-                    let clientX, clientY;
-                    if (e.type === "touchstart") {
-                        clientX = e.touches[0].clientX;
-                        clientY = e.touches[0].clientY;
-                    } else {
-                        clientX = e.clientX;
-                        clientY = e.clientY;
+                    const point = getClientPoint(e);
+                    if (!point) return;
+
+                    if (fixedOnDrag) {
+                        e.preventDefault();
+                        const rect = element.getBoundingClientRect();
+                        applyFloatingPosition(rect.left || viewportMargin, rect.top || viewportMargin, rect.width || 320, rect.height || 320);
+                        const nextRect = element.getBoundingClientRect();
+                        startPointerX = point.x;
+                        startPointerY = point.y;
+                        startLeft = nextRect.left;
+                        startTop = nextRect.top;
+                        isDragging = true;
+                        element.classList.add('draggable-active');
+                        return;
                     }
 
                     // 记录初始点击位置
@@ -1892,8 +2018,8 @@
                          yOffset = 0;
                     }
 
-                    initialX = clientX - xOffset;
-                    initialY = clientY - yOffset;
+                    initialX = point.x - xOffset;
+                    initialY = point.y - yOffset;
 
                     isDragging = true;
                     element.classList.add('draggable-active');
@@ -1903,17 +2029,19 @@
                     if (isDragging) {
                         e.preventDefault();
                         
-                        let clientX, clientY;
-                        if (e.type === "touchmove") {
-                            clientX = e.touches[0].clientX;
-                            clientY = e.touches[0].clientY;
-                        } else {
-                            clientX = e.clientX;
-                            clientY = e.clientY;
+                        const point = getClientPoint(e);
+                        if (!point) return;
+
+                        if (fixedOnDrag) {
+                            const rect = element.getBoundingClientRect();
+                            const nextLeft = startLeft + (point.x - startPointerX);
+                            const nextTop = startTop + (point.y - startPointerY);
+                            applyFloatingPosition(nextLeft, nextTop, rect.width, rect.height);
+                            return;
                         }
 
-                        currentX = clientX - initialX;
-                        currentY = clientY - initialY;
+                        currentX = point.x - initialX;
+                        currentY = point.y - initialY;
 
                         xOffset = currentX;
                         yOffset = currentY;
@@ -1928,8 +2056,12 @@
 
                 function dragEnd(e) {
                     if (!isDragging) return;
-                    initialX = currentX;
-                    initialY = currentY;
+                    if (fixedOnDrag) {
+                        saveFloatingPosition();
+                    } else {
+                        initialX = currentX;
+                        initialY = currentY;
+                    }
                     isDragging = false;
                     element.classList.remove('draggable-active');
                 }
@@ -1945,6 +2077,11 @@
             // 初始化拖拽
             makeDraggable("map-info-box");
             makeDraggable("intensity-chart-section");
+            makeDraggable("satellite-window", {
+                fixedOnDrag: true,
+                persistKey: "tcs_satellite_window_position",
+                resetButtonId: "reset-sat-position-btn"
+            });
         });
     </script>
 

@@ -38,18 +38,18 @@ const PAGASA_AUXILIARY_NAMES = [
 ];
 
 const WARM_POOLS = [
-    { label: 'WPAC warm pool', lon: 145, lat: 12, amp: 42, sx: 23, sy: 10 },
-    { label: 'Philippine Sea', lon: 132, lat: 16, amp: 34, sx: 13, sy: 8 },
-    { label: 'Gulf loop current', lon: -87, lat: 25, amp: 44, sx: 10, sy: 7 },
-    { label: 'Caribbean', lon: -75, lat: 16, amp: 34, sx: 18, sy: 8 },
-    { label: 'Bay of Bengal', lon: 89, lat: 14, amp: 38, sx: 11, sy: 8 },
-    { label: 'Arabian Sea warm layer', lon: 66, lat: 16, amp: 24, sx: 11, sy: 7 },
-    { label: 'Ionian Sea medicane pocket', lon: 18, lat: 36.5, amp: 16, sx: 8, sy: 4 },
-    { label: 'Levantine warm basin', lon: 30, lat: 34, amp: 14, sx: 8, sy: 4 },
-    { label: 'central Mediterranean warm layer', lon: 13, lat: 36.5, amp: 12, sx: 9, sy: 4 },
-    { label: 'Fictionia warm current', lon: -92, lat: 17, amp: 30, sx: 14, sy: 8 },
-    { label: 'Coral Sea', lon: 155, lat: -15, amp: 28, sx: 17, sy: 8 },
-    { label: 'South Indian warm pool', lon: 75, lat: -13, amp: 32, sx: 24, sy: 9 }
+    { label: 'WPAC warm pool', lon: 145, lat: 12, amp: 24, sx: 22, sy: 9 },
+    { label: 'Philippine Sea', lon: 132, lat: 16, amp: 19, sx: 12, sy: 7 },
+    { label: 'Gulf loop current', lon: -87, lat: 25, amp: 23, sx: 9, sy: 6 },
+    { label: 'Caribbean', lon: -75, lat: 16, amp: 17, sx: 17, sy: 7 },
+    { label: 'Bay of Bengal', lon: 89, lat: 14, amp: 22, sx: 10, sy: 7 },
+    { label: 'Arabian Sea warm layer', lon: 66, lat: 16, amp: 15, sx: 10, sy: 6 },
+    { label: 'Ionian Sea medicane pocket', lon: 18, lat: 36.5, amp: 7, sx: 7, sy: 3.5 },
+    { label: 'Levantine warm basin', lon: 30, lat: 34, amp: 6, sx: 7, sy: 3.5 },
+    { label: 'central Mediterranean warm layer', lon: 13, lat: 36.5, amp: 5, sx: 8, sy: 3.5 },
+    { label: 'Fictionia warm current', lon: -92, lat: 17, amp: 13, sx: 5, sy: 5 },
+    { label: 'Coral Sea', lon: 155, lat: -15, amp: 16, sx: 16, sy: 7 },
+    { label: 'South Indian warm pool', lon: 75, lat: -13, amp: 18, sx: 22, sy: 8 }
 ];
 
 function clamp(value, min, max) {
@@ -106,25 +106,31 @@ export function calculateOceanHeatContent(lat, lon, month = 8, globalTempK = 289
 
     let regionalDepthBoost = 0;
     let regionLabel = 'open ocean';
+    let strongestRegionalBoost = 0;
     WARM_POOLS.forEach(pool => {
         const influence = gaussian(normalizedLon, lat, pool.lon, pool.lat, pool.sx, pool.sy);
         const boost = pool.amp * influence;
-        if (boost > regionalDepthBoost) regionLabel = pool.label;
+        if (boost > strongestRegionalBoost) {
+            strongestRegionalBoost = boost;
+            regionLabel = pool.label;
+        }
         regionalDepthBoost += boost;
     });
 
-    const equatorialBoost = isMediterranean ? 0 : clamp(18 - absLat * 0.55, 0, 18);
+    const equatorialBoost = isMediterranean ? 0 : clamp(10 - absLat * 0.35, 0, 10);
     const subtropicalPenalty = isMediterranean ? Math.max(0, absLat - 42) * 0.7 : Math.max(0, absLat - 28) * 2.1;
     const medSeasonPeak = 9.5;
     const medSeason = 0.5 + 0.5 * Math.cos((month - medSeasonPeak) * Math.PI / 6);
-    const seasonalBoost = isMediterranean ? (8 + medSeason * 14) : season * (lat >= 0 ? 16 : 13);
+    const seasonalBoost = isMediterranean ? (5 + medSeason * 9) : season * (lat >= 0 ? 9 : 7);
+    if (strongestRegionalBoost < 3) regionLabel = 'open ocean';
+
     const depth26M = isMediterranean
-        ? clamp(7 + warmAnomaly * 5.8 + regionalDepthBoost * 0.55 + seasonalBoost - subtropicalPenalty, 0, 82)
-        : clamp(8 + warmAnomaly * 13.5 + equatorialBoost + regionalDepthBoost + seasonalBoost - subtropicalPenalty, 0, 175);
+        ? clamp(5 + warmAnomaly * 3.8 + regionalDepthBoost * 0.4 + seasonalBoost - subtropicalPenalty, 0, 58)
+        : clamp(6 + warmAnomaly * 8.4 + equatorialBoost + regionalDepthBoost + seasonalBoost - subtropicalPenalty, 0, 125);
 
     const rhoCp = 4.09e6;
     const ohc = rhoCp * warmAnomaly * depth26M / 1e7;
-    const roundedOHC = Math.round(clamp(ohc, 0, isMediterranean ? 90 : 180));
+    const roundedOHC = Math.round(clamp(ohc, 0, isMediterranean ? 55 : 120));
 
     return {
         sst,

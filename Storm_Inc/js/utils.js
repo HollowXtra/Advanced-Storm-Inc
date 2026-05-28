@@ -268,27 +268,32 @@ export const directionToCompass = deg => {
 
 // --- 洋流配置表 (重构优化) ---
 const OCEAN_CURRENTS = [
-    { name: "Cali", lat: 30, lon: -125, max: -3.0, sLat: 15, sLon: 50 },  // 加利福尼亚寒流
-    { name: "Gulf", lat: 38, lon: -60,  max: 5.0,  sLat: 20, sLon: 30 },  // 北大西洋暖流
-    { name: "SCS",  lat: 20, lon: 115,  max: -1.0, sLat: 20, sLon: 8, seasonal: true }, // 南海
-    { name: "Canary", lat: 30, lon: -20, max: -4.5, sLat: 30, sLon: 45 }, // 加那利寒流
-    { name: "Japan", lat: 27, lon: 140, max: 1.0,  sLat: 5,  sLon: 20 },  // 日本暖流
-    { name: "GOM",   lat: 25, lon: -90, max: 3.0,  sLat: 7,  sLon: 10 },  // 墨西哥湾
-    { name: "Somalia", lat: 10, lon: 50, max: -4.5, sLat: 10, sLon: 15 }, // 索马里寒流
-    { name: "Benguela", lat: -25, lon: 5, max: -5.0, sLat: 15, sLon: 20 },// 本格拉寒流
-    { name: "WestAus", lat: -35, lon: 105, max: -2.0, sLat: 15, sLon: 20 }, // 西澳寒流
-    { name: "Peru", lat: -15, lon: -80, max: -6.0, sLat: 15, sLon: 20 }, // 秘鲁寒流
-    { name: "Seq", lat: -10, lon: 100, max: 2.0, sLat: 5, sLon: 40 } // 南赤道暖流
+    { name: "Cali", lat: 30, lon: -125, max: -4.4, sLat: 10, sLon: 20 },
+    { name: "Gulf", lat: 38, lon: -60, max: 1.8, sLat: 18, sLon: 28 },
+    { name: "SCS", lat: 20, lon: 115, max: -0.8, sLat: 18, sLon: 8, seasonal: true },
+    { name: "Canary", lat: 30, lon: -20, max: -4.2, sLat: 13, sLon: 18 },
+    { name: "Japan", lat: 27, lon: 140, max: 1.1, sLat: 7, sLon: 20 },
+    { name: "GOM", lat: 25, lon: -90, max: 1.7, sLat: 7, sLon: 10 },
+    { name: "IndoPacificWarmPool", lat: 9, lon: 145, max: 1.5, sLat: 9, sLon: 34 },
+    { name: "CaribbeanWarmPool", lat: 16, lon: -75, max: 1.1, sLat: 8, sLon: 18 },
+    { name: "BayBengalWarmPool", lat: 14, lon: 89, max: 1.2, sLat: 8, sLon: 11 },
+    { name: "Somalia", lat: 10, lon: 50, max: -4.8, sLat: 8, sLon: 11 },
+    { name: "Benguela", lat: -25, lon: 5, max: -5.1, sLat: 12, sLon: 16 },
+    { name: "WestAus", lat: -35, lon: 105, max: -2.8, sLat: 11, sLon: 16 },
+    { name: "Peru", lat: -15, lon: -80, max: -6.2, sLat: 12, sLon: 17 },
+    { name: "Seq", lat: -10, lon: 100, max: 1.1, sLat: 5, sLon: 35 }
 ];
 
 export function getSST(lat, lon, month, globalTempK = 289) { 
     const BASELINE_TEMP_K = 289.0;
-    const tempAnomaly = globalTempK - BASELINE_TEMP_K;
+    const tempAnomaly = Math.max(-8, Math.min(12, globalTempK - BASELINE_TEMP_K));
+    const absLat = Math.abs(lat);
+    const seasonalPeak = lat >= 0 ? 8 : 2;
+    const seasonalPhase = Math.cos((month - seasonalPeak) * (Math.PI / 6));
+    const seasonalAmplitude = Math.max(0, Math.min(1, (absLat - 7) / 38)) * (lat >= 0 ? 4.8 : 3.2);
+    const latitudeCooling = Math.max(0, absLat - 8) * 0.18 + Math.max(0, absLat - 26) ** 1.12 * 0.1;
     
-    const seasonalModifier = lat > 0 ? 2.8 + Math.cos((month - 8) * (Math.PI / 6)) * 1.7
-    : 2.0 - Math.cos((month - 8) * (Math.PI / 6)) * 1.3;
-    
-    let baseSST = Math.abs(lat) < 12 ? (31.9 + 0.6 * tempAnomaly) : Math.max(10, (31.9 + 0.6 * tempAnomaly) - (Math.abs(lat) - 12) / seasonalModifier + Math.abs(lat / 60) ** 1.6);
+    let baseSST = 28.25 + 0.24 * tempAnomaly - latitudeCooling + seasonalAmplitude * seasonalPhase;
 
     // [重构] 循环处理洋流调整
     let currentAdjustment = 0;
@@ -302,7 +307,7 @@ export function getSST(lat, lon, month, globalTempK = 289) {
 
         // 特殊处理南海的季节性变化
         if (curr.seasonal) {
-            maxEffect = -0.8 - 0.5 * Math.abs(month - 8);
+            maxEffect = -0.5 - 0.35 * Math.abs(month - 8);
             sigmaLon = 8 + Math.abs(month - 8);
         }
 
@@ -319,9 +324,12 @@ export function getSST(lat, lon, month, globalTempK = 289) {
         const ionianWarmth = Math.exp(-((shortestLongitudeDistance(medLon, 18) ** 2) / (2 * 9 ** 2) + ((lat - 36.5) ** 2) / (2 * 5 ** 2)));
         const levantineWarmth = Math.exp(-((shortestLongitudeDistance(medLon, 30) ** 2) / (2 * 8 ** 2) + ((lat - 34) ** 2) / (2 * 4.5 ** 2)));
         const westernCoolPocket = Math.exp(-((shortestLongitudeDistance(medLon, 3) ** 2) / (2 * 7 ** 2) + ((lat - 39) ** 2) / (2 * 4 ** 2)));
-        baseSST += 0.8 + medSeason * 1.4 + ionianWarmth * 0.9 + levantineWarmth * 1.2 - westernCoolPocket * 0.45;
-        baseSST = Math.max(13.5, baseSST);
+        baseSST += 0.45 + medSeason * 0.85 + ionianWarmth * 0.55 + levantineWarmth * 0.75 - westernCoolPocket * 0.55;
+        baseSST = Math.max(12.5, baseSST);
     }
 
-    return Math.max(0, Math.min(60, baseSST));
+    const realisticMax = isMediterranean
+        ? 29.6 + Math.max(0, tempAnomaly) * 0.08
+        : 31.8 + Math.max(0, tempAnomaly) * 0.12;
+    return Math.max(-2, Math.min(realisticMax, baseSST));
 }

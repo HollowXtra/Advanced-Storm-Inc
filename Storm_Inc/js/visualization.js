@@ -7,7 +7,7 @@ import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
-import { CUSTOM_MAP_BASINS, CUSTOM_MAP_CITIES, getCustomMapCredit, getCustomMapDefinition, getCustomMapDetailLines, getCustomMapRenderWindow, getCustomMapWaterFeatures, isCustomMapBasin, isCustomMapFeature, isCustomMapGridBasin, isCustomMapTerrainBasin } from './fictionia-map.js';
+import { CUSTOM_MAP_BASINS, CUSTOM_MAP_CITIES, getCustomMapCredit, getCustomMapDefinition, getCustomMapDetailLines, getCustomMapRaster, getCustomMapRenderWindow, getCustomMapWaterFeatures, isCustomMapBasin, isCustomMapFeature, isCustomMapGridBasin, isCustomMapTerrainBasin } from './fictionia-map.js';
 
 const MAP_CITY_DATA = [...CITY_DATA, ...CUSTOM_MAP_CITIES];
 const OCEAN_FILL = '#0a3a66';
@@ -235,6 +235,63 @@ function getCustomLineStyle(lineFeature, terrainStyle, gridStyle) {
     return { stroke: kind === 'river' ? '#3b82f6' : '#111827', width: kind === 'river' ? 1.15 : 0.85, opacity: kind === 'river' ? 0.8 : 0.72 };
 }
 
+function getProjectedBoundsRect(projection, bounds, width, height) {
+    if (!bounds) return null;
+    const corners = [
+        [bounds.lon.min, bounds.lat.min],
+        [bounds.lon.min, bounds.lat.max],
+        [bounds.lon.max, bounds.lat.min],
+        [bounds.lon.max, bounds.lat.max]
+    ]
+        .map(point => projection(point))
+        .filter(Boolean);
+
+    if (corners.length < 2) return null;
+
+    const xs = corners.map(point => point[0]);
+    const ys = corners.map(point => point[1]);
+    const pad = 2;
+    const x = Math.max(-width, Math.min(...xs) - pad);
+    const y = Math.max(-height, Math.min(...ys) - pad);
+    const rectWidth = Math.min(width * 3, Math.max(...xs) - Math.min(...xs) + pad * 2);
+    const rectHeight = Math.min(height * 3, Math.max(...ys) - Math.min(...ys) + pad * 2);
+
+    return { x, y, width: rectWidth, height: rectHeight };
+}
+
+function drawCustomMapRaster(staticLayer, projection, width, height, activeBasin) {
+    const definition = getCustomMapDefinition(activeBasin);
+    const rasterHref = getCustomMapRaster(activeBasin);
+    const data = definition && rasterHref ? [{ ...definition, rasterHref }] : [];
+
+    const images = staticLayer.selectAll("image.custom-map-raster")
+        .data(data, d => d.rasterHref);
+
+    images.exit().remove();
+
+    images.enter()
+        .insert("image", ".graticule")
+        .attr("class", "custom-map-raster")
+        .attr("preserveAspectRatio", "none")
+        .style("pointer-events", "none")
+        .merge(images)
+        .each(function(d) {
+            const rect = getProjectedBoundsRect(projection, d.bounds, width, height);
+            if (!rect) {
+                d3.select(this).attr("opacity", 0);
+                return;
+            }
+            d3.select(this)
+                .attr("href", d.rasterHref)
+                .attr("xlink:href", d.rasterHref)
+                .attr("x", rect.x)
+                .attr("y", rect.y)
+                .attr("width", rect.width)
+                .attr("height", rect.height)
+                .attr("opacity", 0.98);
+        });
+}
+
 function drawCustomMapDetails(staticLayer, pathGenerator, width, height, visible, activeBasin) {
     const groups = staticLayer.selectAll('g.custom-map-details').data(visible ? [activeBasin] : []);
     groups.exit().remove();
@@ -269,6 +326,7 @@ function drawCustomMapDetails(staticLayer, pathGenerator, width, height, visible
         .attr('stroke', terrainStyle ? '#020617' : '#f8fafc')
         .attr('stroke-width', terrainStyle ? 0.9 : 0.75)
         .attr('stroke-opacity', terrainStyle ? 0.72 : 0.95)
+        .attr('opacity', getCustomMapRaster(activeBasin) ? 0 : 1)
         .attr('vector-effect', 'non-scaling-stroke')
         .style('pointer-events', 'none');
 
@@ -1550,6 +1608,8 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
             .style("stroke", "none");
     }
 
+    drawCustomMapRaster(staticLayer, mapProjection, width, height, activeBasin);
+
     // B. 更新：每一帧都需要根据新的 Projection 更新坐标
     // 虽然有些消耗，但比 remove() + append() 快得多
     staticLayer.select(".graticule")
@@ -1562,15 +1622,16 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         .attr("d", pathGenerator)
         .style("fill", d => {
             if (!isCustomMapFeature(d)) return null;
+            if (customMapDefinition?.raster) return "transparent";
             if (d.properties?.customMap === 'redstone') {
                 if (!showCustomMapTerrain) return "#030303";
                 return d.properties?.biome === 'dry' ? '#7d6f4c' : '#1f4c24';
             }
             return showCustomMapTerrain ? "#064f16" : "#030303";
         })
-        .style("stroke", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? "#020617" : "#f8fafc") : null)
-        .style("stroke-width", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? 0.85 : 0.95) : null)
-        .style("stroke-opacity", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? 0.82 : 0.98) : null);
+        .style("stroke", d => isCustomMapFeature(d) ? (customMapDefinition?.raster ? "none" : (showCustomMapTerrain ? "#020617" : "#f8fafc")) : null)
+        .style("stroke-width", d => isCustomMapFeature(d) ? (customMapDefinition?.raster ? 0 : (showCustomMapTerrain ? 0.85 : 0.95)) : null)
+        .style("stroke-opacity", d => isCustomMapFeature(d) ? (customMapDefinition?.raster ? 0 : (showCustomMapTerrain ? 0.82 : 0.98)) : null);
     drawCustomMapDetails(staticLayer, pathGenerator, width, height, showCustomMapDetails && !!customMapDefinition, activeBasin);
 
     cityLabelLayer.selectAll("*").remove();
@@ -3541,6 +3602,371 @@ export function renderJTWCStyle(cyclone, timeIndex, worldData) {
  * [泛化版] 支持 34kt 和 64kt 阈值
  * @param {number} threshold - 风速阈值 (34 或 64)
  */
+function getForecastModelsForTime(cyclone, timeIndex) {
+    const safeIndex = Math.max(0, Math.min(timeIndex || 0, (cyclone?.track?.length || 1) - 1));
+    const snapAge = Math.floor((safeIndex * 3) / 6) * 6;
+    if (cyclone?.forecastLogs && cyclone.forecastLogs[snapAge]) return cyclone.forecastLogs[snapAge];
+    return cyclone?.pathForecasts || [];
+}
+
+function unwrapForecastModelsForCanvas(models, centerLon) {
+    return (models || []).map(model => ({
+        ...model,
+        modelName: model.modelName || model.name || 'MODEL',
+        family: model.family || 'guidance',
+        color: model.color || '#38bdf8',
+        track: (model.track || []).map(point => {
+            const copy = [...point];
+            copy[0] = unwrapLongitude(point[0], centerLon);
+            return copy;
+        })
+    }));
+}
+
+function drawIcwcCanvasBase(ctx, projection, pathGenerator, worldData, width, height, options = {}) {
+    const { bg = '#96b7d6', land = '#e7d98b', grid = '#6b7280', cities = true, centerLon = 0, centerLat = 0 } = options;
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+    ctx.beginPath();
+    ctx.strokeStyle = grid;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.45;
+    pathGenerator(d3.geoGraticule().step([5, 5])());
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.fillStyle = land;
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.1;
+    pathGenerator(worldData);
+    ctx.fill();
+    ctx.stroke();
+    if (!cities) return;
+    const majorCities = getVisibleCities(projection, width, height, { lon: centerLon, lat: centerLat }, 30, 76)
+        .map(city => ({ name: city.n.toUpperCase(), lon: city.lon, lat: city.lat }));
+    ctx.save();
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 11px Arial';
+    ctx.textBaseline = 'middle';
+    majorCities.forEach(city => {
+        const pos = projection([city.lon, city.lat]);
+        if (!pos || pos[0] < 10 || pos[0] > width - 10 || pos[1] < 10 || pos[1] > height - 10) return;
+        ctx.fillRect(pos[0] - 2, pos[1] - 2, 4, 4);
+        ctx.textAlign = pos[0] > width - 90 ? 'right' : 'left';
+        ctx.fillText(city.name, pos[0] + (pos[0] > width - 90 ? -6 : 6), pos[1]);
+    });
+    ctx.restore();
+}
+
+function drawCanvasTrack(ctx, projection, pathGenerator, track, color, width = 2, dash = []) {
+    if (!track || track.length < 2) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash(dash);
+    pathGenerator({ type: 'LineString', coordinates: track.map(point => [point[0], point[1]]) });
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawErrorText(ctx, width, height, message) {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 30px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(message, width / 2, height / 2);
+}
+
+export function renderSpaghettiStyle(cyclone, timeIndex, worldData, filter = 'all') {
+    const width = 1600;
+    const height = 1200;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!cyclone?.track?.length) {
+        drawErrorText(ctx, width, height, 'NO CYCLONE DATA');
+        return canvas;
+    }
+    const safeIndex = Math.max(0, Math.min(timeIndex || 0, cyclone.track.length - 1));
+    const currentPointRaw = cyclone.track[safeIndex];
+    const centerLon = currentPointRaw[0];
+    const centerLat = currentPointRaw[1];
+    const projection = d3.geoEquirectangular()
+        .rotate([-centerLon, 0])
+        .center([0, centerLat])
+        .scale(3500)
+        .translate([width / 2, height / 2]);
+    const pathGenerator = d3.geoPath().projection(projection).context(ctx);
+    drawIcwcCanvasBase(ctx, projection, pathGenerator, worldData, width, height, { centerLon, centerLat, bg: '#a9bfd4' });
+    const pastTrack = cyclone.track.slice(0, safeIndex + 1).map(point => {
+        const copy = [...point];
+        copy[0] = unwrapLongitude(point[0], centerLon);
+        return copy;
+    });
+    drawCanvasTrack(ctx, projection, pathGenerator, pastTrack, '#020617', 4, [9, 5]);
+    const allModels = unwrapForecastModelsForCanvas(getForecastModelsForTime(cyclone, safeIndex), centerLon);
+    const models = filter === 'all' ? allModels : allModels.filter(model => model.family === filter || model.modelName === filter);
+    models.forEach(model => {
+        const emphasis = model.family === 'consensus' || model.modelName === 'ICWC';
+        drawCanvasTrack(ctx, projection, pathGenerator, model.track, model.color, emphasis ? 4 : 2.4, emphasis ? [] : [8, 5]);
+        const end = model.track[model.track.length - 1];
+        const pos = end ? projection([end[0], end[1]]) : null;
+        if (!pos) return;
+        ctx.save();
+        ctx.font = `bold ${emphasis ? 17 : 14}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#f8fafc';
+        ctx.fillStyle = model.color;
+        ctx.strokeText(model.modelName, pos[0] + 6, pos[1]);
+        ctx.fillText(model.modelName, pos[0] + 6, pos[1]);
+        ctx.restore();
+    });
+    const currPos = projection([pastTrack[pastTrack.length - 1][0], pastTrack[pastTrack.length - 1][1]]);
+    if (currPos) {
+        ctx.beginPath();
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#020617';
+        ctx.lineWidth = 3;
+        ctx.arc(currPos[0], currPos[1], 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(0, 0, width, 64);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 24px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('ICWC SPAGHETTI MODEL GUIDANCE', 24, 40);
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 17px Arial';
+    ctx.fillText(`VALID T+${safeIndex * 3}H / ${filter.toUpperCase()}`, width - 24, 40);
+    const legendX = 24;
+    let legendY = 88;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = '#020617';
+    ctx.fillRect(legendX, legendY - 22, 310, Math.max(72, models.length * 24 + 38));
+    ctx.strokeRect(legendX, legendY - 22, 310, Math.max(72, models.length * 24 + 38));
+    ctx.font = 'bold 12px Arial';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('MODEL MEMBERS', legendX + 12, legendY);
+    legendY += 22;
+    models.forEach(model => {
+        ctx.beginPath();
+        ctx.strokeStyle = model.color;
+        ctx.lineWidth = model.family === 'consensus' ? 4 : 2.4;
+        ctx.setLineDash(model.family === 'consensus' ? [] : [8, 5]);
+        ctx.moveTo(legendX + 14, legendY);
+        ctx.lineTo(legendX + 70, legendY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#020617';
+        ctx.font = "bold 13px 'JetBrains Mono', monospace";
+        ctx.fillText(`${model.modelName}  ${model.family.toUpperCase()}`, legendX + 82, legendY + 4);
+        legendY += 24;
+    });
+    ctx.restore();
+    ctx.fillStyle = '#dc2626';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('SIMULATED GUIDANCE ONLY / NOT REAL-WORLD FORECAST DATA', width / 2, height - 20);
+    return canvas;
+}
+
+function productColor(productKey, value) {
+    if (productKey === 'rain') {
+        if (value > 110) return 'rgba(126,34,206,0.70)';
+        if (value > 70) return 'rgba(239,68,68,0.62)';
+        if (value > 38) return 'rgba(234,179,8,0.55)';
+        if (value > 12) return 'rgba(34,197,94,0.42)';
+        return 'rgba(14,165,233,0.14)';
+    }
+    if (productKey === 'shear') {
+        if (value > 36) return 'rgba(220,38,38,0.54)';
+        if (value > 24) return 'rgba(234,179,8,0.44)';
+        if (value > 12) return 'rgba(34,197,94,0.34)';
+        return 'rgba(45,212,191,0.22)';
+    }
+    if (productKey === 'ohc') {
+        if (value > 110) return 'rgba(239,68,68,0.50)';
+        if (value > 75) return 'rgba(249,115,22,0.44)';
+        if (value > 45) return 'rgba(234,179,8,0.34)';
+        return 'rgba(59,130,246,0.22)';
+    }
+    if (productKey === 'radar') {
+        if (value > 58) return 'rgba(168,85,247,0.68)';
+        if (value > 45) return 'rgba(239,68,68,0.58)';
+        if (value > 30) return 'rgba(234,179,8,0.46)';
+        if (value > 16) return 'rgba(34,197,94,0.34)';
+        return 'rgba(14,165,233,0.12)';
+    }
+    if (productKey === 'height') {
+        if (value > 70) return 'rgba(244,63,94,0.38)';
+        if (value > 45) return 'rgba(251,191,36,0.30)';
+        if (value > 20) return 'rgba(59,130,246,0.24)';
+        return 'rgba(15,23,42,0.08)';
+    }
+    if (value < 950) return 'rgba(147,51,234,0.42)';
+    if (value < 980) return 'rgba(239,68,68,0.34)';
+    if (value < 1000) return 'rgba(234,179,8,0.24)';
+    return 'rgba(14,165,233,0.14)';
+}
+
+function getModelProductMeta(productKey) {
+    const products = {
+        mslp_wind: { title: 'MSLP / 10M WIND', unit: 'hPa', legend: 'Lower pressure and stronger 10m winds shaded near the vortex.' },
+        rain: { title: 'TOTAL PRECIP / RAIN BANDS', unit: 'mm', legend: 'Accumulated rain swath from the selected forecast member.' },
+        radar: { title: 'SIMULATED REFLECTIVITY', unit: 'dBZ', legend: 'Convective bands and eyewall reflectivity.' },
+        shear: { title: '200-850MB WIND SHEAR', unit: 'kt', legend: 'Environmental shear vectors and unfavorable zones.' },
+        ohc: { title: 'OCEAN HEAT CONTENT', unit: 'kJ/cm2', legend: 'Warm ocean support for intensification.' },
+        height: { title: '500MB HEIGHT / VORTICITY', unit: 'dam', legend: 'Mid-level steering ridge/trough and vorticity envelope.' }
+    };
+    return products[productKey] || products.mslp_wind;
+}
+
+export function renderModelFieldStyle(cyclone, timeIndex, worldData, options = {}) {
+    const width = 1600;
+    const height = 1200;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const productKey = options.productKey || 'mslp_wind';
+    const requestedModel = options.modelName || 'GFS';
+    const meta = getModelProductMeta(productKey);
+    if (!cyclone?.track?.length) {
+        drawErrorText(ctx, width, height, 'NO CYCLONE DATA');
+        return canvas;
+    }
+    const safeIndex = Math.max(0, Math.min(timeIndex || 0, cyclone.track.length - 1));
+    const currentPointRaw = cyclone.track[safeIndex];
+    const centerLon = currentPointRaw[0];
+    const centerLat = currentPointRaw[1];
+    const intensity = currentPointRaw[2] || cyclone.intensity || 25;
+    const projection = d3.geoEquirectangular()
+        .rotate([-centerLon, 0])
+        .center([0, centerLat])
+        .scale(3500)
+        .translate([width / 2, height / 2]);
+    const pathGenerator = d3.geoPath().projection(projection).context(ctx);
+    drawIcwcCanvasBase(ctx, projection, pathGenerator, worldData, width, height, {
+        centerLon,
+        centerLat,
+        bg: '#7fb0d6',
+        land: '#d8cc8a',
+        cities: false
+    });
+    const models = unwrapForecastModelsForCanvas(getForecastModelsForTime(cyclone, safeIndex), centerLon);
+    const selectedModel = models.find(model => model.modelName === requestedModel) || models[0] || { modelName: requestedModel, color: '#38bdf8', track: [] };
+    const step = 18;
+    for (let y = 64; y < height - 64; y += step) {
+        for (let x = 0; x < width; x += step) {
+            const lonLat = projection.invert([x + step / 2, y + step / 2]);
+            if (!lonLat) continue;
+            const lon = lonLat[0];
+            const lat = lonLat[1];
+            const dist = calculateDistance(centerLat, centerLon, lat, lon);
+            const azNoise = Math.sin((lon + safeIndex) * 0.38) + Math.cos((lat - safeIndex) * 0.44);
+            let value;
+            if (productKey === 'rain') {
+                value = Math.max(0, intensity * 1.55 - dist * 0.11 + azNoise * 16);
+            } else if (productKey === 'radar') {
+                value = Math.max(0, intensity * 0.52 - dist * 0.06 + Math.sin(dist / 38 + azNoise) * 18);
+            } else if (productKey === 'shear') {
+                value = Math.max(0, (cyclone.effectiveShearKt || cyclone.verticalShear || 16) + azNoise * 9 + dist / 180);
+            } else if (productKey === 'ohc') {
+                const sst = getSST(lat, lon, cyclone.currentMonth || 8, 289) || 26;
+                value = Math.max(0, (sst - 24) * 24 + Math.max(0, 350 - dist) * 0.08 + azNoise * 8);
+            } else if (productKey === 'height') {
+                value = Math.max(0, 80 - dist * 0.05 + azNoise * 18);
+            } else {
+                const centerPressure = windToPressure(intensity, currentPointRaw[5] || cyclone.circulationSize || 260, cyclone.basin || 'WPAC');
+                value = Math.min(1014, centerPressure + dist * 0.13 + azNoise * 2);
+            }
+            ctx.fillStyle = productColor(productKey, value);
+            ctx.fillRect(x, y, step + 1, step + 1);
+        }
+    }
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(232,216,136,0.82)';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.1;
+    pathGenerator(worldData);
+    ctx.fill();
+    ctx.stroke();
+    drawCanvasTrack(ctx, projection, pathGenerator, selectedModel.track, selectedModel.color || '#38bdf8', 4, selectedModel.family === 'consensus' ? [] : [10, 5]);
+    drawCanvasTrack(ctx, projection, pathGenerator, cyclone.track.slice(0, safeIndex + 1).map(point => {
+        const copy = [...point];
+        copy[0] = unwrapLongitude(point[0], centerLon);
+        return copy;
+    }), '#020617', 3, [6, 4]);
+    if (productKey === 'shear') {
+        ctx.save();
+        ctx.strokeStyle = '#0f172a';
+        ctx.fillStyle = '#0f172a';
+        ctx.lineWidth = 2;
+        for (let y = 130; y < height - 110; y += 120) {
+            for (let x = 90; x < width - 90; x += 150) {
+                const angle = Math.sin((x + safeIndex) * 0.01) * 0.8 - 0.4;
+                const len = 42;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(x + Math.cos(angle) * len, y + Math.sin(angle) * len, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+    const currPos = projection([centerLon, centerLat]);
+    if (currPos) {
+        ctx.beginPath();
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#020617';
+        ctx.lineWidth = 3;
+        ctx.arc(currPos[0], currPos[1], 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(0, 0, width, 66);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 24px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(`ICWC MODEL FIELD: ${meta.title}`, 24, 41);
+    ctx.textAlign = 'right';
+    ctx.font = "bold 18px 'JetBrains Mono', monospace";
+    ctx.fillText(`${selectedModel.modelName || requestedModel} / T+${safeIndex * 3}H`, width - 24, 41);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeStyle = '#020617';
+    ctx.fillRect(24, height - 124, 520, 82);
+    ctx.strokeRect(24, height - 124, 520, 82);
+    ctx.fillStyle = '#020617';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${meta.title} (${meta.unit})`, 44, height - 95);
+    ctx.font = '12px Arial';
+    ctx.fillText(meta.legend, 44, height - 72);
+    ctx.fillText('Synthetic ICWC game guidance inspired by operational model-product layouts.', 44, height - 52);
+    ctx.restore();
+    ctx.fillStyle = '#dc2626';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('SIMULATED MODEL PRODUCT ONLY / NOT REAL-WORLD FORECAST DATA', width / 2, height - 20);
+    return canvas;
+}
+
 export function renderProbabilitiesStyle(cyclone, timeIndex, worldData, threshold = 34) {
     const width = 1600;
     const height = 1200;
@@ -3886,20 +4312,25 @@ export function drawStationGraph(containerId, historyData, type = 'wind') {
 
     // 1. 设置尺寸与边距
     const rect = container.node().getBoundingClientRect();
+    const chartWidth = Math.max(260, rect.width || 640);
+    const chartHeight = Math.max(180, rect.height || 280);
     const margin = { top: 40, right: 30, bottom: 30, left: 40 }; 
-    const width = rect.width - margin.left - margin.right;
-    const height = rect.height - margin.top - margin.bottom;
+    const width = Math.max(120, chartWidth - margin.left - margin.right);
+    const height = Math.max(80, chartHeight - margin.top - margin.bottom);
 
     const svg = container.append("svg")
         .attr("width", "100%")
         .attr("height", "100%")
-        .attr("viewBox", `0 0 ${rect.width} ${rect.height}`)
+        .attr("viewBox", `0 0 ${chartWidth} ${chartHeight}`)
         .append("g")
         .attr("transform", `translate(${margin.left},${margin.top})`);
 
     // 2. X轴 (时间)
+    const hourExtent = d3.extent(historyData, d => d.hour);
+    const minHour = Number.isFinite(hourExtent[0]) ? hourExtent[0] : 0;
+    const maxHour = Number.isFinite(hourExtent[1]) ? hourExtent[1] : minHour + 3;
     const x = d3.scaleLinear()
-        .domain(d3.extent(historyData, d => d.hour))
+        .domain(minHour === maxHour ? [minHour - 3, maxHour + 3] : [minHour, maxHour])
         .range([0, width]);
 
     svg.append("g")

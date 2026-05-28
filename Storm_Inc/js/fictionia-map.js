@@ -19,6 +19,12 @@ export const REDSTONE_BOUNDS = {
     lon: { min: 92, max: 170 },
     lat: { min: -45, max: 4 }
 };
+export const CUSTOM_MAP_RASTERS = {
+    [FICTIONIA_BASIN]: './assets/maps/fictionia-basin.png',
+    [FICTIONIA2_BASIN]: './assets/maps/fictionia2-basin.png',
+    [REDSTONE_BASIN]: './assets/maps/redstone-basin.png',
+    [REDSTONE_GRID_BASIN]: './assets/maps/redstone-grid-basin.png'
+};
 
 function feature(name, coordinates, customMap = 'fictionia', extraProperties = {}) {
     return {
@@ -300,6 +306,7 @@ const CUSTOM_MAP_DEFINITIONS = {
         waterFeatures: FICTIONIA_WATER_FEATURES,
         detailLines: FICTIONIA_COUNTY_LINES,
         credit: FICTIONIA_CREDIT,
+        raster: CUSTOM_MAP_RASTERS[FICTIONIA_BASIN],
         terrain: false,
         grid: false
     },
@@ -311,6 +318,7 @@ const CUSTOM_MAP_DEFINITIONS = {
         waterFeatures: FICTIONIA_WATER_FEATURES,
         detailLines: FICTIONIA_COUNTY_LINES,
         credit: FICTIONIA2_CREDIT,
+        raster: CUSTOM_MAP_RASTERS[FICTIONIA2_BASIN],
         terrain: true,
         grid: false
     },
@@ -322,6 +330,7 @@ const CUSTOM_MAP_DEFINITIONS = {
         waterFeatures: REDSTONE_WATER_FEATURES,
         detailLines: REDSTONE_DETAIL_LINES,
         credit: REDSTONE_CREDIT,
+        raster: CUSTOM_MAP_RASTERS[REDSTONE_BASIN],
         terrain: true,
         grid: false
     },
@@ -333,6 +342,7 @@ const CUSTOM_MAP_DEFINITIONS = {
         waterFeatures: REDSTONE_WATER_FEATURES,
         detailLines: REDSTONE_GRID_LINES,
         credit: REDSTONE_GRID_CREDIT,
+        raster: CUSTOM_MAP_RASTERS[REDSTONE_GRID_BASIN],
         terrain: true,
         grid: true
     }
@@ -410,6 +420,10 @@ export function isCustomMapFeature(feature) {
 
 export function getCustomMapCredit(basin) {
     return getCustomMapDefinition(basin)?.credit || '';
+}
+
+export function getCustomMapRaster(basin) {
+    return getCustomMapDefinition(basin)?.raster || null;
 }
 
 export function getCustomMapDetailLines(basin) {

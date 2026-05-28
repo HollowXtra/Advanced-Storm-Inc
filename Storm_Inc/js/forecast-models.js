@@ -21,9 +21,19 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
     const forecasts = [];
     const isMedicane = cyclone.basin === 'MED';
     
-    // 模型定义
+    // ICWC guidance members. Global models use broader steering spread while
+    // hurricane/diagnostic members keep tighter inner-core assumptions.
     const models = [
-        { name: "ENAI", bias: { u: 0.5, v: 0.6 } },
+        { name: "ICWC", modelName: "ICWC", family: "consensus", color: "#f8fafc", bias: { u: 0.35, v: 0.45 }, speedScale: 1.00, turnRate: 0.25, intensityBias: 0, shearBias: 0 },
+        { name: "GFS", modelName: "GFS", family: "global", color: "#38bdf8", bias: { u: 0.82, v: 0.18 }, speedScale: 1.06, turnRate: 0.21, intensityBias: -2, shearBias: 1.5 },
+        { name: "ECMWF", modelName: "ECMWF", family: "global", color: "#f97316", bias: { u: -0.38, v: 0.24 }, speedScale: 0.95, turnRate: 0.18, intensityBias: 1, shearBias: -0.5 },
+        { name: "UKMET", modelName: "UKMET", family: "global", color: "#a78bfa", bias: { u: -0.18, v: 0.68 }, speedScale: 1.01, turnRate: 0.19, intensityBias: 0, shearBias: 0.75 },
+        { name: "ICON", modelName: "ICON", family: "global", color: "#22c55e", bias: { u: 0.16, v: -0.48 }, speedScale: 0.98, turnRate: 0.23, intensityBias: -1, shearBias: 0.25 },
+        { name: "CMC", modelName: "CMC", family: "global", color: "#eab308", bias: { u: 0.44, v: -0.28 }, speedScale: 1.03, turnRate: 0.22, intensityBias: -1, shearBias: 0.5 },
+        { name: "HAFS-A", modelName: "HAFS-A", family: "hurricane", color: "#ef4444", bias: { u: 0.08, v: 0.1 }, speedScale: 0.97, turnRate: 0.31, intensityBias: 6, shearBias: -1.5 },
+        { name: "HWRF", modelName: "HWRF", family: "hurricane", color: "#ec4899", bias: { u: -0.1, v: -0.08 }, speedScale: 0.94, turnRate: 0.34, intensityBias: 4, shearBias: -0.75 },
+        { name: "HMON", modelName: "HMON", family: "hurricane", color: "#14b8a6", bias: { u: 0.24, v: -0.04 }, speedScale: 1.00, turnRate: 0.29, intensityBias: 2, shearBias: 0.25 },
+        { name: "HWDAT", modelName: "HWDAT", family: "diagnostic", color: "#f43f5e", bias: { u: -0.04, v: 0.02 }, speedScale: 0.92, turnRate: 0.38, intensityBias: 5, shearBias: -1.0 }
     ];
 
     // 参数配置
@@ -51,10 +61,10 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
             let angleDiff = steeringDirection - tempCyclone.direction;
             while (angleDiff < -180) angleDiff += 360;
             while (angleDiff > 180) angleDiff -= 360;
-            tempCyclone.direction = (tempCyclone.direction + angleDiff * 0.25 + 360) % 360;
+            tempCyclone.direction = (tempCyclone.direction + angleDiff * (model.turnRate || 0.25) + 360) % 360;
             
             const steeringSpeedKnots = Math.hypot(steerU, steerV) * 1.94384;
-            tempCyclone.speed += (steeringSpeedKnots - tempCyclone.speed) * 0.3;
+            tempCyclone.speed += ((steeringSpeedKnots * (model.speedScale || 1)) - tempCyclone.speed) * (model.speedRelaxation || 0.3);
             
             const currentSpeed = Math.max(3, tempCyclone.speed);
             const angleRad = (90 - tempCyclone.direction) * (Math.PI / 180);
@@ -127,9 +137,10 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                         mpi *= 1 + ohcSupport * 0.4;
                         mpi += waterFuel * 14;
                     }
+                    mpi += model.intensityBias || 0;
                     tempCyclone.environmentHumidity = hum;
                     const shearEnv = updateShearEnvironment(tempCyclone, shearU, shearV, cyclone.currentMonth || 8, globalShearSetting, isMedicane);
-                    const totalShear = shearEnv.effectiveShearKt;
+                    const totalShear = Math.max(0, shearEnv.effectiveShearKt + (model.shearBias || 0));
                     const gap = mpi - lastCalculatedIntensity;
                     const changeRate = isMedicane
                         ? (gap > 0 ? Math.random()*0.025 + 0.045 - 0.5/lastCalculatedIntensity - (totalShear * 0.0038) : 0.08 + (totalShear * 0.0024))
@@ -158,7 +169,13 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                 tempCyclone.isExtratropical || false
             ]);
         }
-        forecasts.push({ name: model.name, track: track });
+        forecasts.push({
+            name: model.name,
+            modelName: model.modelName || model.name,
+            family: model.family || "guidance",
+            color: model.color || "#38bdf8",
+            track: track
+        });
     });
     return forecasts;
 }

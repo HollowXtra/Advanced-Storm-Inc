@@ -13,7 +13,7 @@ import { initTerrainSystem, getElevationAt, getLandStatus, setCustomBasinTerrain
 import { initializeCyclone, initializePressureSystems, updatePressureSystems, updateFrontalZone, updateCycloneState, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 // [修改] 引入新的历史强度图绘制函数
-import { drawMap, drawFinalPath, drawHistoricalIntensityChart, drawHumidityField, calculateBackgroundHumidity, calculateTotalHumidity, drawAllHistoryTracks, renderJTWCStyle, renderProbabilitiesStyle, drawStationGraph, renderPhaseSpace, startNewsAnimation, renderStationSynopticChart } from './visualization.js';
+import { drawMap, drawFinalPath, drawHistoricalIntensityChart, drawHumidityField, calculateBackgroundHumidity, calculateTotalHumidity, drawAllHistoryTracks, renderJTWCStyle, renderProbabilitiesStyle, renderSpaghettiStyle, renderModelFieldStyle, drawStationGraph, renderPhaseSpace, startNewsAnimation, renderStationSynopticChart } from './visualization.js';
 import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, formatSurge, updateImpactState } from './impact-system.js';
 import { buildInvestDisplayId, buildInvestId, classifyInvestChance } from './invest-system.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
@@ -1234,7 +1234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.8';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.9';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -3564,42 +3564,30 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         
         // --- 1. 构建 Tab 界面结构 (增加 64KT 按钮) ---
         jtwcOutput.innerHTML = `
-            <div class="flex h-[600px] w-full"> 
-                <div class="w-40 flex-shrink-0 bg-gray-100 border-r border-gray-300 p-2 flex flex-col gap-2">
-                    <div class="text-xs font-bold text-gray-500 mb-2 px-2">PRODUCTS</div>
-                    
-                    <button id="jtwc-tab-graphic" class="text-left px-3 py-2 text-sm font-bold bg-white border border-gray-300 rounded shadow-sm text-cyan-700 transition-all hover:bg-gray-50">
-                        WARNING GRAPHIC
-                    </button>
-                    
-                    <button id="jtwc-tab-prob34" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors">
-                        WIND PROB 34KT
-                    </button>
+            <div class="flex h-[640px] w-full bg-slate-950 text-slate-100">
+                <div class="w-52 flex-shrink-0 border-r border-cyan-400/25 bg-slate-950 p-3 flex flex-col gap-2">
+                    <div class="px-2 pb-2 border-b border-white/10">
+                        <div class="text-[10px] font-black tracking-[0.28em] text-cyan-300">ICWC</div>
+                        <div class="text-[11px] font-mono text-slate-400 uppercase mt-1">Forecast Desk</div>
+                    </div>
 
-                    <button id="jtwc-tab-prob64" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors">
-                        WIND PROB 64KT
-                    </button>
+                    <button id="jtwc-tab-graphic" class="icwc-tab is-active"><i class="fa-solid fa-map-location-dot"></i><span>Warning Graphic</span></button>
+                    <button id="jtwc-tab-spaghetti" class="icwc-tab"><i class="fa-solid fa-route"></i><span>Spaghetti</span></button>
+                    <button id="jtwc-tab-models" class="icwc-tab"><i class="fa-solid fa-layer-group"></i><span>Model Fields</span></button>
 
-                    <button id="jtwc-tab-satellite" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors">
-                    SAT IMAGERY
-                    </button>
+                    <div class="mt-2 text-[9px] font-bold uppercase tracking-[0.24em] text-slate-500">Hazards</div>
+                    <button id="jtwc-tab-prob34" class="icwc-tab"><i class="fa-solid fa-wind"></i><span>Wind Prob 34kt</span></button>
+                    <button id="jtwc-tab-prob64" class="icwc-tab"><i class="fa-solid fa-burst"></i><span>Wind Prob 64kt</span></button>
 
-                    <button id="jtwc-tab-phase" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors">
-                        PHASE SPACE
-                    </button>
-
-                    <div class="h-px bg-gray-300 my-1"></div>
-                    <button id="jtwc-tab-station" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors flex items-center gap-2">
-                        STATION OBS
-                    </button>
-
-                    <button id="jtwc-tab-synoptic" class="text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors flex items-center gap-2">
-                        SYNOPTIC CHART
-                    </button>
+                    <div class="mt-2 text-[9px] font-bold uppercase tracking-[0.24em] text-slate-500">Analysis</div>
+                    <button id="jtwc-tab-satellite" class="icwc-tab"><i class="fa-solid fa-satellite"></i><span>Satellite</span></button>
+                    <button id="jtwc-tab-phase" class="icwc-tab"><i class="fa-solid fa-diagram-project"></i><span>Phase Space</span></button>
+                    <button id="jtwc-tab-station" class="icwc-tab"><i class="fa-solid fa-tower-cell"></i><span>Station Obs</span></button>
+                    <button id="jtwc-tab-synoptic" class="icwc-tab"><i class="fa-solid fa-chart-area"></i><span>Synoptic Chart</span></button>
                 </div>
-                
-                <div id="jtwc-content-area" class="flex-1 bg-gray-50 flex items-center justify-center overflow-auto p-4 relative">
-                    <div id="jtwc-loading" class="hidden absolute inset-0 flex items-center justify-center bg-white/80 z-10 text-cyan-600 font-bold pointer-events-none">
+
+                <div id="jtwc-content-area" class="flex-1 bg-slate-900 flex items-center justify-center overflow-auto p-4 relative">
+                    <div id="jtwc-loading" class="hidden absolute inset-0 flex items-center justify-center bg-slate-950/80 z-10 text-cyan-300 font-bold pointer-events-none">
                         GENERATING...
                     </div>
                 </div>
@@ -3610,13 +3598,28 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         const tabGraphic = document.getElementById('jtwc-tab-graphic');
         const tabProb34 = document.getElementById('jtwc-tab-prob34');
         const tabProb64 = document.getElementById('jtwc-tab-prob64');
+        const tabSpaghetti = document.getElementById('jtwc-tab-spaghetti');
+        const tabModels = document.getElementById('jtwc-tab-models');
         const tabSatellite = document.getElementById('jtwc-tab-satellite');
         const tabStation = document.getElementById('jtwc-tab-station');
         const tabSynoptic = document.getElementById('jtwc-tab-synoptic');
+        const tabPhase = document.getElementById('jtwc-tab-phase');
         const loadingNode = document.getElementById('jtwc-loading');
         
         let currentCanvas = null;
         let currentMode = 'GRAPHIC'; // 用于保存文件名
+
+        const syncTimelineButton = () => {
+            const timelineButton = document.getElementById('saveTimelineVideo');
+            if (!timelineButton) return;
+            const canRenderTimeline = currentMode === 'GRAPHIC' || currentMode === 'SYNOPTIC';
+            timelineButton.classList.toggle('hidden', !canRenderTimeline);
+        };
+
+        const setCurrentMode = (mode) => {
+            currentMode = mode;
+            syncTimelineButton();
+        };
 
         const showLoading = () => {
             contentArea.innerHTML = ''; 
@@ -3625,11 +3628,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         };
 
         const updateTabStyles = (activeTab) => {
-            [tabGraphic, tabProb34, tabProb64, tabSatellite, tabPhase, tabStation, tabSynoptic].forEach(tab => {
+            [tabGraphic, tabSpaghetti, tabModels, tabProb34, tabProb64, tabSatellite, tabPhase, tabStation, tabSynoptic].forEach(tab => {
                 if (tab === activeTab) {
-                    tab.className = "text-left px-3 py-2 text-sm font-bold bg-white border border-gray-300 rounded shadow-sm text-cyan-700 transition-all";
+                    tab.className = "icwc-tab is-active";
                 } else {
-                    tab.className = "text-left px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-200 rounded transition-colors";
+                    tab.className = "icwc-tab";
                 }
             });
         };
@@ -3638,7 +3641,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         
         const showGraphic = () => {
             updateTabStyles(tabGraphic);
-            currentMode = 'GRAPHIC';
+            setCurrentMode('GRAPHIC');
             showLoading(); 
 
             setTimeout(() => {
@@ -3654,7 +3657,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         const showProb = (threshold) => {
             const activeTab = threshold === 64 ? tabProb64 : tabProb34;
             updateTabStyles(activeTab);
-            currentMode = threshold === 64 ? 'PROB64' : 'PROB34';
+            setCurrentMode(threshold === 64 ? 'PROB64' : 'PROB34');
             
             showLoading();
 
@@ -3673,9 +3676,183 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         };
 
         // B. Phase Space 页面
+        const renderCanvasProduct = (canvas, toolbarHtml = '') => {
+            canvas.className = "max-w-full max-h-full object-contain shadow-2xl border border-cyan-400/25 bg-black";
+            canvas.style.maxWidth = '100%';
+            canvas.style.maxHeight = '100%';
+            contentArea.innerHTML = `
+                <div class="w-full h-full flex flex-col gap-3">
+                    ${toolbarHtml}
+                    <div id="icwc-product-host" class="flex-1 min-h-0 flex items-center justify-center overflow-hidden"></div>
+                </div>
+            `;
+            document.getElementById('icwc-product-host')?.appendChild(canvas);
+            currentCanvas = canvas;
+            syncTimelineButton();
+        };
+
+        const showSpaghettiModels = (filter = 'all') => {
+            updateTabStyles(tabSpaghetti);
+            setCurrentMode(`SPAGHETTI_${filter.toUpperCase()}`);
+            showLoading();
+            setTimeout(() => {
+                const filters = [
+                    { key: 'all', label: 'All' },
+                    { key: 'global', label: 'Global' },
+                    { key: 'hurricane', label: 'Hurricane' },
+                    { key: 'diagnostic', label: 'HWDAT' },
+                    { key: 'consensus', label: 'Consensus' }
+                ];
+                const toolbar = `
+                    <div class="flex flex-wrap items-center justify-between gap-2 border border-cyan-400/20 bg-slate-950/80 p-2">
+                        <div class="text-[10px] font-mono font-bold uppercase tracking-[0.22em] text-cyan-300">Spaghetti Guidance</div>
+                        <div class="flex flex-wrap gap-1">
+                            ${filters.map(item => `<button data-spaghetti-filter="${item.key}" class="px-2.5 py-1 border text-[10px] font-mono font-bold uppercase ${item.key === filter ? 'border-cyan-300 bg-cyan-400/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:border-cyan-300/50'}">${item.label}</button>`).join('')}
+                        </div>
+                    </div>
+                `;
+                renderCanvasProduct(renderSpaghettiStyle(targetCyclone, renderIndex, state.world, filter), toolbar);
+                contentArea.querySelectorAll('[data-spaghetti-filter]').forEach(button => {
+                    button.addEventListener('click', () => showSpaghettiModels(button.dataset.spaghettiFilter || 'all'));
+                });
+            }, 35);
+        };
+
+        const showModelFields = (modelName = 'GFS', productKey = 'mslp_wind') => {
+            updateTabStyles(tabModels);
+            setCurrentMode(`MODEL_${modelName}_${productKey}`.replace(/[^A-Z0-9_]/gi, '_').toUpperCase());
+            showLoading();
+            setTimeout(() => {
+                const models = ['GFS', 'ECMWF', 'HAFS-A', 'HWRF', 'HMON', 'HWDAT'];
+                const products = [
+                    { key: 'mslp_wind', label: 'MSLP/Wind' },
+                    { key: 'rain', label: 'Rain' },
+                    { key: 'radar', label: 'Radar' },
+                    { key: 'shear', label: 'Shear' },
+                    { key: 'ohc', label: 'OHC' },
+                    { key: 'height', label: '500mb' }
+                ];
+                const toolbar = `
+                    <div class="grid gap-2 border border-cyan-400/20 bg-slate-950/80 p-2">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="text-[10px] font-mono font-bold uppercase tracking-[0.22em] text-cyan-300">Model Fields</div>
+                            <div class="flex flex-wrap gap-1">
+                                ${models.map(item => `<button data-model-name="${item}" class="px-2.5 py-1 border text-[10px] font-mono font-bold uppercase ${item === modelName ? 'border-cyan-300 bg-cyan-400/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:border-cyan-300/50'}">${item}</button>`).join('')}
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                            ${products.map(item => `<button data-product-key="${item.key}" class="px-2.5 py-1 border text-[10px] font-mono font-bold uppercase ${item.key === productKey ? 'border-amber-300 bg-amber-400/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:border-amber-300/50'}">${item.label}</button>`).join('')}
+                        </div>
+                    </div>
+                `;
+                renderCanvasProduct(renderModelFieldStyle(targetCyclone, renderIndex, state.world, { modelName, productKey }), toolbar);
+                contentArea.querySelectorAll('[data-model-name]').forEach(button => {
+                    button.addEventListener('click', () => showModelFields(button.dataset.modelName || 'GFS', productKey));
+                });
+                contentArea.querySelectorAll('[data-product-key]').forEach(button => {
+                    button.addEventListener('click', () => showModelFields(modelName, button.dataset.productKey || 'mslp_wind'));
+                });
+            }, 35);
+        };
+
+        const finiteNumberOrNull = (value) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        const getTrackPointHour = (index) => Math.max(0, index * 3);
+
+        const getStationCoordinates = (trackPoint, existingRecord = null) => {
+            const recordLon = finiteNumberOrNull(existingRecord?.lon);
+            const recordLat = finiteNumberOrNull(existingRecord?.lat);
+            const configuredLon = finiteNumberOrNull(state.siteLon);
+            const configuredLat = finiteNumberOrNull(state.siteLat);
+            const trackLon = finiteNumberOrNull(trackPoint?.[0]);
+            const trackLat = finiteNumberOrNull(trackPoint?.[1]);
+            const configuredLooksUnset = !existingRecord && configuredLon === 0 && configuredLat === 0;
+            const hasConfiguredStation = configuredLon != null && configuredLat != null && !configuredLooksUnset;
+            const fallbackLon = trackLon == null
+                ? 0
+                : ((((trackLon + 0.85) + 540) % 360) - 180);
+            const fallbackLat = trackLat == null
+                ? 0
+                : trackLat + (trackLat < 0 ? -0.45 : 0.45);
+            return {
+                lon: recordLon ?? (hasConfiguredStation ? configuredLon : null) ?? fallbackLon,
+                lat: recordLat ?? (hasConfiguredStation ? configuredLat : null) ?? fallbackLat
+            };
+        };
+
+        const findStationRecord = (records, targetHour) => {
+            if (!Array.isArray(records) || records.length === 0) return null;
+            const usable = records
+                .filter(record => Number.isFinite(Number(record?.hour)))
+                .sort((a, b) => Number(a.hour) - Number(b.hour));
+            const exact = usable.find(record => Number(record.hour) === targetHour);
+            if (exact) return exact;
+            const closest = usable.reduce((best, record) => {
+                const distance = Math.abs(Number(record.hour) - targetHour);
+                if (!best || distance < best.distance) return { record, distance };
+                return best;
+            }, null);
+            return closest && closest.distance <= 6 ? closest.record : null;
+        };
+
+        const buildSyntheticStationRecord = (cyclone, trackIndex, stationLon, stationLat) => {
+            const trackPoint = cyclone?.track?.[trackIndex];
+            if (!trackPoint) return null;
+            const hour = getTrackPointHour(trackIndex);
+            const cycLon = Number(trackPoint[0] || 0);
+            const cycLat = Number(trackPoint[1] || 0);
+            const intensity = Math.max(0, Number(trackPoint[2] || 0));
+            const size = Math.max(160, Number(trackPoint[5] || cyclone?.circulationSize || 320));
+            const distKm = calculateDistance(cycLat, cycLon, stationLat, stationLon);
+            const radiusScale = Math.max(70, size * 0.55);
+            const influence = Math.exp(-distKm / radiusScale);
+            const rainBand = Math.max(0, Math.cos(distKm / Math.max(65, size * 0.28)));
+            const localWind = Math.max(3, 7 + intensity * influence * (0.62 + Math.min(0.22, size / 1800)));
+            const angleToStation = Math.atan2(stationLat - cycLat, (stationLon - cycLon) * Math.cos(cycLat * Math.PI / 180));
+            const rotationSign = cycLat < 0 ? 1 : -1;
+            const flowAngle = angleToStation + rotationSign * Math.PI / 2;
+            const u = Math.cos(flowAngle) * localWind;
+            const v = Math.sin(flowAngle) * localWind;
+            const centerPressure = Number.isFinite(Number(trackPoint[10]))
+                ? Number(trackPoint[10])
+                : windToPressure(intensity, size, cyclone?.basin || basinSelector.value);
+            const ambientPressure = Math.max(1006, getPressureAt(stationLon, stationLat, state.pressureSystems || []));
+            const pressure = centerPressure + (ambientPressure - centerPressure) * (1 - influence);
+            const rainRateMmHr = Math.max(0, (intensity * 0.22 + rainBand * 18) * influence);
+            const dbz = Math.max(0, Math.min(65, 6 + rainRateMmHr * 1.35 + intensity * 0.08));
+            return {
+                hour,
+                wind: localWind,
+                pressure,
+                u,
+                v,
+                dbz,
+                rainRateMmHr,
+                floodLevelM: Math.max(0, rainRateMmHr * 0.018),
+                lat: stationLat,
+                lon: stationLon,
+                synthetic: true
+            };
+        };
+
+        const buildSyntheticStationHistory = (cyclone, targetIndex, stationLon, stationLat) => {
+            if (!cyclone?.track?.length) return [];
+            const limit = Math.min(targetIndex, cyclone.track.length - 1);
+            const start = Math.max(0, limit - 24);
+            const history = [];
+            for (let i = start; i <= limit; i++) {
+                const record = buildSyntheticStationRecord(cyclone, i, stationLon, stationLat);
+                if (record) history.push(record);
+            }
+            return history;
+        };
+
         const showPhaseSpace = () => {
             updateTabStyles(tabPhase);
-            currentMode = 'PHASE';
+            setCurrentMode('PHASE');
             currentCanvas = null;
             showLoading();
 
@@ -3692,12 +3869,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             }, 50);
         };
 
-        const tabPhase = document.getElementById('jtwc-tab-phase');
         tabPhase.onclick = showPhaseSpace;
 
         const showSatelliteImagery = () => {
             updateTabStyles(tabSatellite);
-            currentMode = 'SATELLITE';
+            setCurrentMode('SATELLITE');
             currentCanvas = null;
             contentArea.innerHTML = ''; // 清空区域
 
@@ -3782,12 +3958,12 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
         const showSynopticChart = () => {
             updateTabStyles(tabSynoptic);
-            currentMode = 'SYNOPTIC';
+            setCurrentMode('SYNOPTIC');
             currentCanvas = null;
             showLoading();
 
             // 1. 确定时间点
-            const targetHour = renderIndex * 3;
+            const targetHour = getTrackPointHour(renderIndex);
             const isHistoryMode = !!state.selectedHistoryCyclone;
             
             let sourceSiteList = isHistoryMode ? (state.selectedHistoryCyclone.siteHistory || []) : state.siteHistory;
@@ -3861,13 +4037,13 @@ if (isHistoryMode) {
         // C. [修复版] 站点数据视图：基于历史记录查表
         const showStationData = () => {
             updateTabStyles(tabStation);
-            currentMode = 'STATION';
+            setCurrentMode('STATION');
             currentCanvas = null;
             contentArea.innerHTML = ''; 
 
             // 1. 计算目标时间
             // renderIndex 是轨迹点的索引，每步3小时
-            const targetHour = renderIndex * 3;
+            const targetHour = getTrackPointHour(renderIndex);
             const isHistoryMode = !!state.selectedHistoryCyclone;
             let sourceList = [];
             if (isHistoryMode) {
@@ -3877,7 +4053,15 @@ if (isHistoryMode) {
             }
 
             // 在确定的列表里查找记录
-            const record = sourceList.find(h => h.hour === targetHour);
+            const stationTrackPoint = targetCyclone.track[renderIndex];
+            const savedRecord = findStationRecord(sourceList, targetHour);
+            const stationCoords = getStationCoordinates(stationTrackPoint, savedRecord);
+            let activeSourceList = Array.isArray(sourceList) ? sourceList : [];
+            let record = savedRecord;
+            if (!record) {
+                activeSourceList = buildSyntheticStationHistory(targetCyclone, renderIndex, stationCoords.lon, stationCoords.lat);
+                record = findStationRecord(activeSourceList, targetHour) || activeSourceList[activeSourceList.length - 1] || null;
+            }
 
             // 3. 错误处理：如果没有记录（例如模拟未开始、未设置站点、或改了站点导致历史失效）
             if (!record) {
@@ -3917,8 +4101,8 @@ if (isHistoryMode) {
             // 注意：targetCyclone.track[renderIndex] 是气旋当时的位置
             const p = targetCyclone.track[renderIndex];
             // record.lat/lon 是当时站点的位置 (如果按照上面的修改存了的话，否则用当前的 state.siteLat)
-            const siteLatFixed = record.lat || state.siteLat;
-            const siteLonFixed = record.lon || state.siteLon;
+            const siteLatFixed = finiteNumberOrNull(record.lat) ?? finiteNumberOrNull(state.siteLat) ?? stationCoords.lat;
+            const siteLonFixed = finiteNumberOrNull(record.lon) ?? finiteNumberOrNull(state.siteLon) ?? stationCoords.lon;
             
             const distKm = calculateDistance(p[1], p[0], siteLatFixed, siteLonFixed);
             const bearing = (Math.atan2(p[0] - siteLonFixed, p[1] - siteLatFixed) * 180 / Math.PI + 360) % 360;
@@ -3929,7 +4113,7 @@ if (isHistoryMode) {
             const bearingStr = directionToCompass(bearingDeg);
 
             // 5. 渲染 HTML (保持原有样式)
-            const siteName = state.siteName || "UNNAMED STATION";
+            const siteName = state.siteName || (record.synthetic ? "ICWC AUTO STATION" : "UNNAMED STATION");
             const year = getActiveSimulationYear(targetCyclone);
             const monthIndex = (state.currentMonth || 8) - 1; 
             const simDate = new Date(Date.UTC(year, monthIndex, 1)); // 从当月1号开始
@@ -3945,7 +4129,9 @@ if (isHistoryMode) {
             const obsTimeCode = `${yyyyStr}${mmStr}${ddStr}${hhStr}`;
 
             // 2. 计算降水 (3小时累积估算)
-            const precipVal = Math.max(0, (dbz - 12) * 2);
+            const precipVal = Number.isFinite(Number(record.rainRateMmHr))
+                ? Math.max(0, Number(record.rainRateMmHr) * 3)
+                : Math.max(0, (dbz - 12) * 2);
             const precipStr = precipVal.toFixed(1); // 保留1位小数 (8.6MM)
 
             // 3. 拼接最终字符串
@@ -3960,6 +4146,7 @@ contentArea.innerHTML = `
                             <div class="text-[10px] text-gray-500 mt-1 flex gap-2">
                                 <span><i class="fa-solid fa-location-dot"></i> ${siteLatFixed.toFixed(2)}N, ${siteLonFixed.toFixed(2)}E</span>
                                 <span><i class="fa-solid fa-clock"></i> T+${targetHour}H</span>
+                                ${record.synthetic ? '<span class="text-cyan-600"><i class="fa-solid fa-wand-magic-sparkles"></i> AUTO</span>' : ''}
                             </div>
                         </div>
                         <div class="text-right">
@@ -4017,7 +4204,9 @@ contentArea.innerHTML = `
             const titleLabel = document.getElementById('station-chart-title');
             const panelWind = document.getElementById('panel-wind');
             const panelPressure = document.getElementById('panel-pressure');
-            const historySlice = sourceList.filter(h => h.hour <= targetHour);
+            const historySlice = activeSourceList
+                .filter(h => Number.isFinite(Number(h.hour)) && Number(h.hour) <= targetHour)
+                .sort((a, b) => Number(a.hour) - Number(b.hour));
 
             // 默认显示 Wind
             drawStationGraph(chartContainer, historySlice, 'wind');
@@ -4072,7 +4261,9 @@ contentArea.innerHTML = `
 
                     // 恢复降水
                     const dVal = h.dbz || 0;
-                    const prec = Math.max(0, (dVal - 15) * (Math.random() + 1.8)).toFixed(1);
+                    const prec = Number.isFinite(Number(h.rainRateMmHr))
+                        ? Math.max(0, Number(h.rainRateMmHr) * 3).toFixed(1)
+                        : Math.max(0, (dVal - 15) * 2).toFixed(1);
 
                     // C. 格式化单行 (使用 padEnd/padStart 对齐，让排版更整齐)
                     // 例如: 2026070106  12KT  NE   1008hPa  0.0MM
@@ -4096,6 +4287,8 @@ contentArea.innerHTML = `
 
         // --- 3. 绑定事件 ---
         tabGraphic.onclick = showGraphic;
+        tabSpaghetti.onclick = () => showSpaghettiModels('all');
+        tabModels.onclick = () => showModelFields('GFS', 'mslp_wind');
         tabProb34.onclick = () => showProb(34);
         tabProb64.onclick = () => showProb(64);
         tabSatellite.onclick = showSatelliteImagery;
@@ -4146,6 +4339,7 @@ contentArea.innerHTML = `
                 saveBtn.parentNode.insertBefore(timelineBtn, saveBtn);
             }
         }
+        syncTimelineButton();
 
         // 2. 绑定点击事件
         timelineBtn.onclick = async () => {

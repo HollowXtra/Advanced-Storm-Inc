@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storm-inc-shell-v13';
+const CACHE_NAME = 'storm-inc-shell-v16';
 const SHELL_ASSETS = [
   './TCM.html',
   './a.png',
@@ -13,6 +13,10 @@ const SHELL_ASSETS = [
   './NATL - Static.m4a',
   './EPAC - Void.m4a',
   './SIO - Westerlies.m4a',
+  './assets/maps/fictionia-basin.png',
+  './assets/maps/fictionia2-basin.png',
+  './assets/maps/redstone-basin.png',
+  './assets/maps/redstone-grid-basin.png',
   './js/audio.js',
   './js/city-data.js',
   './js/cyclone-model.js',
@@ -57,6 +61,13 @@ self.addEventListener('fetch', (event) => {
 
   const isDocument = request.mode === 'navigate' || request.destination === 'document';
   if (isDocument) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  const isCodeAsset = ['script', 'style', 'worker'].includes(request.destination)
+    || /\.(?:js|css|json)$/i.test(url.pathname);
+  if (isCodeAsset) {
     event.respondWith(networkFirst(request));
     return;
   }

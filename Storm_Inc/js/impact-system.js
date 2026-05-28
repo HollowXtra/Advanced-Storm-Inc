@@ -1,9 +1,9 @@
 import { CITY_DATA } from './city-data.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge } from './environment-model.js';
 import { calculateDistance } from './utils.js';
-import { FICTIONIA_CITIES } from './fictionia-map.js';
+import { CUSTOM_MAP_CITIES } from './fictionia-map.js';
 
-const IMPACT_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
+const IMPACT_CITY_DATA = [...CITY_DATA, ...CUSTOM_MAP_CITIES];
 
 export const WARNING_META = {
     EW_WARNING: { label: 'Extreme Wind Warning', shortLabel: 'EXT WIND', color: '#ff005d', priority: 6 },

@@ -7,9 +7,9 @@ import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
-import { FICTIONIA_BASIN, FICTIONIA2_BASIN, FICTIONIA_BOUNDS, FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_WATER_FEATURES, getFictioniaCredit, isFictioniaBasin, isFictioniaTerrainBasin } from './fictionia-map.js';
+import { CUSTOM_MAP_BASINS, CUSTOM_MAP_CITIES, getCustomMapCredit, getCustomMapDefinition, getCustomMapDetailLines, getCustomMapRenderWindow, getCustomMapWaterFeatures, isCustomMapBasin, isCustomMapFeature, isCustomMapGridBasin, isCustomMapTerrainBasin } from './fictionia-map.js';
 
-const MAP_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
+const MAP_CITY_DATA = [...CITY_DATA, ...CUSTOM_MAP_CITIES];
 const OCEAN_FILL = '#0a3a66';
 const BASIN_RENDER_WINDOWS = {
     WPAC: { lon: 142, lat: 15, lonSpan: 122, latSpan: 70 },
@@ -19,22 +19,11 @@ const BASIN_RENDER_WINDOWS = {
     SHEM: { lon: 166, lat: -12, lonSpan: 98, latSpan: 52 },
     SIO: { lon: 82, lat: -13, lonSpan: 132, latSpan: 52 },
     SATL: { lon: -24, lat: -18, lonSpan: 88, latSpan: 48 },
-    MED: { lon: 16, lat: 36.5, lonSpan: 66, latSpan: 34 },
-    [FICTIONIA_BASIN]: {
-        lon: (FICTIONIA_BOUNDS.lon.min + FICTIONIA_BOUNDS.lon.max) / 2,
-        lat: (FICTIONIA_BOUNDS.lat.min + FICTIONIA_BOUNDS.lat.max) / 2,
-        lonSpan: (FICTIONIA_BOUNDS.lon.max - FICTIONIA_BOUNDS.lon.min) + 12,
-        latSpan: (FICTIONIA_BOUNDS.lat.max - FICTIONIA_BOUNDS.lat.min) + 12,
-        fictionOnly: true
-    },
-    [FICTIONIA2_BASIN]: {
-        lon: (FICTIONIA_BOUNDS.lon.min + FICTIONIA_BOUNDS.lon.max) / 2,
-        lat: (FICTIONIA_BOUNDS.lat.min + FICTIONIA_BOUNDS.lat.max) / 2,
-        lonSpan: (FICTIONIA_BOUNDS.lon.max - FICTIONIA_BOUNDS.lon.min) + 12,
-        latSpan: (FICTIONIA_BOUNDS.lat.max - FICTIONIA_BOUNDS.lat.min) + 12,
-        fictionOnly: true
-    }
+    MED: { lon: 16, lat: 36.5, lonSpan: 66, latSpan: 34 }
 };
+CUSTOM_MAP_BASINS.forEach(basin => {
+    BASIN_RENDER_WINDOWS[basin] = getCustomMapRenderWindow(basin);
+});
 const featureBoundsCache = new WeakMap();
 
 function getFeatureBounds(feature) {
@@ -74,7 +63,8 @@ function getRenderWindow(activeBasin, focusCyclone, performanceProfile = {}) {
             lat: focusCyclone.lat,
             lonSpan: Math.max(activeSpan.lonSpan, base?.lonSpan || 0),
             latSpan: Math.max(activeSpan.latSpan, base?.latSpan || 0),
-            fictionOnly: base?.fictionOnly || false
+            customOnly: base?.customOnly || false,
+            customMap: base?.customMap || null
         };
     }
 
@@ -83,9 +73,11 @@ function getRenderWindow(activeBasin, focusCyclone, performanceProfile = {}) {
 
 function featureIntersectsWindow(feature, renderWindow) {
     if (!renderWindow) return true;
-    const isFictioniaFeature = !!feature?.properties?.fictionia;
-    if (renderWindow.fictionOnly) return isFictioniaFeature;
-    if (isFictioniaFeature) return false;
+    const customFeature = isCustomMapFeature(feature);
+    if (renderWindow.customOnly) {
+        return customFeature && (!renderWindow.customMap || feature?.properties?.customMap === renderWindow.customMap);
+    }
+    if (customFeature) return false;
 
     const bounds = getFeatureBounds(feature);
     if (!bounds) return true;
@@ -223,48 +215,67 @@ function drawWarningMarkers(container, projection, warnings = []) {
         .style('pointer-events', 'none');
 }
 
-function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible, activeBasin = FICTIONIA_BASIN) {
-    const groups = staticLayer.selectAll('g.fictionia-details').data(visible ? [1] : []);
+function getCustomLineStyle(lineFeature, terrainStyle, gridStyle) {
+    const kind = lineFeature?.properties?.kind || 'county';
+    if (kind === 'equator') {
+        return { stroke: '#f8fafc', width: 1.65, opacity: 0.92 };
+    }
+    if (kind === 'grid-major') {
+        return { stroke: '#e2e8f0', width: 1.05, opacity: 0.42 };
+    }
+    if (kind === 'grid-minor') {
+        return { stroke: '#cbd5e1', width: 0.78, opacity: 0.32 };
+    }
+    if (!terrainStyle) {
+        return { stroke: kind === 'river' ? '#64748b' : '#8b949e', width: kind === 'river' ? 0.9 : 0.65, opacity: kind === 'river' ? 0.72 : 0.82 };
+    }
+    if (gridStyle) {
+        return { stroke: kind === 'river' ? '#38bdf8' : '#e2e8f0', width: kind === 'river' ? 1.0 : 0.75, opacity: kind === 'river' ? 0.75 : 0.35 };
+    }
+    return { stroke: kind === 'river' ? '#3b82f6' : '#111827', width: kind === 'river' ? 1.15 : 0.85, opacity: kind === 'river' ? 0.8 : 0.72 };
+}
+
+function drawCustomMapDetails(staticLayer, pathGenerator, width, height, visible, activeBasin) {
+    const groups = staticLayer.selectAll('g.custom-map-details').data(visible ? [activeBasin] : []);
     groups.exit().remove();
     const group = groups.enter()
         .append('g')
-        .attr('class', 'fictionia-details')
+        .attr('class', 'custom-map-details')
         .merge(groups);
 
     if (!visible) return;
 
-    const terrainStyle = isFictioniaTerrainBasin(activeBasin);
-    group.selectAll('path.fictionia-county-line')
-        .data(FICTIONIA_COUNTY_LINES)
+    const terrainStyle = isCustomMapTerrainBasin(activeBasin);
+    const gridStyle = isCustomMapGridBasin(activeBasin);
+    group.selectAll('path.custom-map-line')
+        .data(getCustomMapDetailLines(activeBasin), d => d.properties.name)
         .join('path')
-        .attr('class', 'fictionia-county-line')
+        .attr('class', 'custom-map-line')
         .attr('d', pathGenerator)
         .attr('fill', 'none')
-        .attr('stroke', d => {
-            if (!terrainStyle) return d.properties.kind === 'river' ? '#64748b' : '#8b949e';
-            return d.properties.kind === 'river' ? '#3b82f6' : '#111827';
-        })
-        .attr('stroke-width', d => d.properties.kind === 'river' ? (terrainStyle ? 1.15 : 0.9) : (terrainStyle ? 0.85 : 0.65))
-        .attr('stroke-opacity', d => d.properties.kind === 'river' ? (terrainStyle ? 0.8 : 0.72) : (terrainStyle ? 0.72 : 0.82))
+        .attr('stroke', d => getCustomLineStyle(d, terrainStyle, gridStyle).stroke)
+        .attr('stroke-width', d => getCustomLineStyle(d, terrainStyle, gridStyle).width)
+        .attr('stroke-opacity', d => getCustomLineStyle(d, terrainStyle, gridStyle).opacity)
         .attr('vector-effect', 'non-scaling-stroke')
         .style('pointer-events', 'none');
 
-    group.selectAll('path.fictionia-water')
-        .data(FICTIONIA_WATER_FEATURES)
+    const definition = getCustomMapDefinition(activeBasin);
+    group.selectAll('path.custom-map-water')
+        .data(getCustomMapWaterFeatures(activeBasin), d => d.properties.name)
         .join('path')
-        .attr('class', 'fictionia-water')
+        .attr('class', 'custom-map-water')
         .attr('d', pathGenerator)
-        .attr('fill', terrainStyle ? '#74a9df' : OCEAN_FILL)
+        .attr('fill', definition?.key === 'fictionia' && terrainStyle ? '#74a9df' : OCEAN_FILL)
         .attr('stroke', terrainStyle ? '#020617' : '#f8fafc')
         .attr('stroke-width', terrainStyle ? 0.9 : 0.75)
         .attr('stroke-opacity', terrainStyle ? 0.72 : 0.95)
         .attr('vector-effect', 'non-scaling-stroke')
         .style('pointer-events', 'none');
 
-    group.selectAll('text.fictionia-credit')
-        .data([getFictioniaCredit(activeBasin)])
+    group.selectAll('text.custom-map-credit')
+        .data([getCustomMapCredit(activeBasin)])
         .join('text')
-        .attr('class', 'fictionia-credit')
+        .attr('class', 'custom-map-credit')
         .attr('x', width - 18)
         .attr('y', height - 18)
         .attr('text-anchor', 'end')
@@ -1496,8 +1507,9 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
 
     // 3. 气旋中心定位逻辑 (仅在 active 状态且有坐标时执行)
     const activeBasin = basin || cyclone?.basin || remoteCyclone?.basin || null;
-    const showFictioniaDetails = isFictioniaBasin(activeBasin);
-    const showFictioniaTerrain = isFictioniaTerrainBasin(activeBasin);
+    const showCustomMapDetails = isCustomMapBasin(activeBasin);
+    const showCustomMapTerrain = isCustomMapTerrainBasin(activeBasin);
+    const customMapDefinition = getCustomMapDefinition(activeBasin);
     const focusCyclone = (cyclone && cyclone.status === 'active' && isFinite(cyclone.lon))
         ? cyclone
         : ((remoteCyclone && isFinite(remoteCyclone.lon) && isFinite(remoteCyclone.lat)) ? remoteCyclone : null);
@@ -1540,17 +1552,26 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
 
     // B. 更新：每一帧都需要根据新的 Projection 更新坐标
     // 虽然有些消耗，但比 remove() + append() 快得多
-    staticLayer.select(".graticule").attr("d", pathGenerator);
+    staticLayer.select(".graticule")
+        .attr("d", pathGenerator)
+        .attr("opacity", showCustomMapDetails ? 0 : null);
     staticLayer.select(".land-group").selectAll(".land")
         .data(visibleLandFeatures)
         .join("path")
         .attr("class", "land")
         .attr("d", pathGenerator)
-        .style("fill", d => d.properties?.fictionia ? (showFictioniaTerrain ? "#064f16" : "#030303") : null)
-        .style("stroke", d => d.properties?.fictionia ? (showFictioniaTerrain ? "#020617" : "#f8fafc") : null)
-        .style("stroke-width", d => d.properties?.fictionia ? (showFictioniaTerrain ? 0.85 : 0.95) : null)
-        .style("stroke-opacity", d => d.properties?.fictionia ? (showFictioniaTerrain ? 0.82 : 0.98) : null);
-    drawFictioniaDetails(staticLayer, pathGenerator, width, height, showFictioniaDetails, activeBasin);
+        .style("fill", d => {
+            if (!isCustomMapFeature(d)) return null;
+            if (d.properties?.customMap === 'redstone') {
+                if (!showCustomMapTerrain) return "#030303";
+                return d.properties?.biome === 'dry' ? '#7d6f4c' : '#1f4c24';
+            }
+            return showCustomMapTerrain ? "#064f16" : "#030303";
+        })
+        .style("stroke", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? "#020617" : "#f8fafc") : null)
+        .style("stroke-width", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? 0.85 : 0.95) : null)
+        .style("stroke-opacity", d => isCustomMapFeature(d) ? (showCustomMapTerrain ? 0.82 : 0.98) : null);
+    drawCustomMapDetails(staticLayer, pathGenerator, width, height, showCustomMapDetails && !!customMapDefinition, activeBasin);
 
     cityLabelLayer.selectAll("*").remove();
     if (showCityLabels && profile.showCityLabels !== false) {
@@ -4552,7 +4573,7 @@ export function startNewsAnimation(canvas, worldData, cyclone, pathForecasts, ba
     const particles = [];
     
     // Common Vars
-    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'RED': 'RS', 'REDG': 'RS', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
     const basinCode = basinMap[basin] || 'XX';
     const cycloneNumStr = String(simulationCount).padStart(2, '0');
     const displayName = cyclone.name ? cyclone.name.toUpperCase() : `${basinCode} ${cycloneNumStr}`;

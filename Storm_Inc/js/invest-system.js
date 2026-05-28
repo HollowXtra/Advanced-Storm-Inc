@@ -6,6 +6,8 @@ const INVEST_BASIN_CODES = {
     MED: { code: 'ME', suffix: 'M' },
     FICT: { code: 'FI', suffix: 'F' },
     FICT2: { code: 'FI', suffix: 'F' },
+    RED: { code: 'RS', suffix: 'R' },
+    REDG: { code: 'RS', suffix: 'R' },
     NIO: { code: 'IO', suffix: 'B' },
     SIO: { code: 'SH', suffix: 'S' },
     SHEM: { code: 'SH', suffix: 'S' },

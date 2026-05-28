@@ -9,7 +9,7 @@ import { RadarRenderer, calculateRadarDbz, getShaderWindVector } from './radar-s
 import { DopplerRenderer } from './radar-doppler.js';
 // [新增] 导入卫星云图模块
 import { initSatelliteView, updateSatelliteView, resetSatelliteParams, setSatelliteGrayscale, getSatelliteSnapshot } from './satellite-view.js';
-import { initTerrainSystem, getElevationAt, getLandStatus, setFictioniaTerrainActive } from './terrain-data.js';
+import { initTerrainSystem, getElevationAt, getLandStatus, setCustomBasinTerrainActive } from './terrain-data.js';
 import { initializeCyclone, initializePressureSystems, updatePressureSystems, updateFrontalZone, updateCycloneState, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 // [修改] 引入新的历史强度图绘制函数
@@ -18,7 +18,7 @@ import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, form
 import { buildInvestDisplayId, buildInvestId, classifyInvestChance } from './invest-system.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
 import { playClick, playToggleOn, playToggleOff, playStart, playError, playAlert, playUpgradeSound, playCat5Sound, toggleSFX } from './audio.js';
-import { addFictioniaToWorld, FICTIONIA_BASIN, FICTIONIA2_BASIN, FICTIONIA_CENTER, isFictioniaBasin } from './fictionia-map.js';
+import { addCustomMapsToWorld, getCustomMapCenter, isCustomMapBasin } from './fictionia-map.js';
 
 const checkLandWrapper = (lon, lat) => {
     const status = getLandStatus(lon, lat);
@@ -400,17 +400,15 @@ document.addEventListener('DOMContentLoaded', () => {
         NIO: { lon: 82, lat: 15 },
         SHEM: { lon: 165, lat: -12 },
         SIO: { lon: 78, lat: -13 },
-        SATL: { lon: -30, lat: -18 },
-        [FICTIONIA_BASIN]: FICTIONIA_CENTER,
-        [FICTIONIA2_BASIN]: FICTIONIA_CENTER
+        SATL: { lon: -30, lat: -18 }
     };
 
     function getBasinViewCenter(basin) {
-        return basinViewCenters[basin] || basinViewCenters.WPAC;
+        return getCustomMapCenter(basin) || basinViewCenters[basin] || basinViewCenters.WPAC;
     }
 
     function syncFictioniaTerrainMode(basin = basinSelector?.value || state.cyclone?.basin || 'WPAC') {
-        setFictioniaTerrainActive(isFictioniaBasin(basin));
+        setCustomBasinTerrainActive(isCustomMapBasin(basin) ? basin : null);
     }
 
     function isMobilePerformanceDevice() {
@@ -571,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
             term = "HURRICANE";
         } 
         // 印度洋/南半球 -> 气旋
-        else if (['SHEM', 'SIO', 'NIO'].includes(basin)) {
+        else if (['SHEM', 'SIO', 'NIO', 'RED', 'REDG'].includes(basin)) {
             term = "CYCLONE";
         }
 
@@ -959,7 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     d3.json("js/world-f.json").then(data => {
-        state.world = addFictioniaToWorld(topojson.feature(data, data.objects.collection));
+        state.world = addCustomMapsToWorld(topojson.feature(data, data.objects.collection));
         
         // 2. 数据加载完，建立图层和投影
         setupCanvases();
@@ -1056,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let peakWind = 0;
         let minPressure = 1010;
         const currentBasin = basinSelector.value || 'WPAC';
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'RED': 'RS', 'REDG': 'RS', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basinCode = basinMap[currentBasin] || 'XX';
         
         // 气旋编号 (如果没有 finalStats，使用当前计数)
@@ -1628,7 +1626,7 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
     }
 
     function formatBestTrack(track, cycloneInfo, simulationCount) {
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'RED': 'RS', 'REDG': 'RS', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[cycloneInfo.basin] || 'WP';
         const cycloneNum = String(simulationCount).padStart(2, '0');
         const investNum = String(cycloneInfo.investNumber || 90).padStart(2, '0');
@@ -3076,7 +3074,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             return;
         }
 
-        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+        const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'RED': 'RS', 'REDG': 'RS', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
         const basin = basinMap[basinSelector.value] || 'WP';
         const year = state.currentYear;
         const month = String(state.currentMonth).padStart(2, '0');

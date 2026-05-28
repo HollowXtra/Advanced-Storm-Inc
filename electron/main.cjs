@@ -182,6 +182,8 @@ function createMainWindow() {
               && !!document.querySelector('#basinSelector option[value="MED"]')
               && !!document.querySelector('#basinSelector option[value="FICT"]')
               && !!document.querySelector('#basinSelector option[value="FICT2"]')
+              && !!document.querySelector('#basinSelector option[value="RED"]')
+              && !!document.querySelector('#basinSelector option[value="REDG"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
               && !!document.getElementById('sttCounter')
@@ -229,6 +231,8 @@ function createMainWindow() {
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
               hasFictioniaBasin: !!document.querySelector('#basinSelector option[value="FICT"]'),
               hasFictionia2Basin: !!document.querySelector('#basinSelector option[value="FICT2"]'),
+              hasRedstoneBasin: !!document.querySelector('#basinSelector option[value="RED"]'),
+              hasRedstoneGridBasin: !!document.querySelector('#basinSelector option[value="REDG"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               simulationAge,
               smokeMinIntensity,

@@ -7,7 +7,7 @@ import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { calculateBackgroundHumidity } from './visualization.js';
 import { calculateCycloneRainfall, calculateOceanHeatContent } from './environment-model.js';
 import { calculateInvestOutlook } from './invest-system.js';
-import { FICTIONIA_BASIN, FICTIONIA2_BASIN, isFictioniaBasin } from './fictionia-map.js';
+import { FICTIONIA_BASIN, FICTIONIA2_BASIN, REDSTONE_BASIN, REDSTONE_GRID_BASIN, isCustomMapBasin, isFictioniaBasin } from './fictionia-map.js';
 
 const basinConfig = {
     'WPAC': { lon: { min: 100, max: 180 }, lat: { min: 5, max: 25 } },  // 西北太平洋
@@ -19,13 +19,21 @@ const basinConfig = {
     'SATL':  { lon: { min: -50,  max: 15 }, lat: { min: -25, max: -10 } },
     'MED': { lon: { min: -5.5, max: 36 }, lat: { min: 31, max: 41.5 } },
     [FICTIONIA_BASIN]: { lon: { min: -97, max: -86 }, lat: { min: 7, max: 23 } },
-    [FICTIONIA2_BASIN]: { lon: { min: -97, max: -86 }, lat: { min: 7, max: 23 } }
+    [FICTIONIA2_BASIN]: { lon: { min: -97, max: -86 }, lat: { min: 7, max: 23 } },
+    [REDSTONE_BASIN]: { lon: { min: 126, max: 148 }, lat: { min: -22, max: -7 } },
+    [REDSTONE_GRID_BASIN]: { lon: { min: 126, max: 148 }, lat: { min: -22, max: -7 } }
 };
 
 const fictioniaGenesisProfiles = [
     { weight: 2.6, lon: -89.0, lonSpread: 2.8, lat: 14.5, latSpread: 2.8, peaks: [7, 8, 9], motion: { direction: 28, spread: 32, speed: 7.5 } },
     { weight: 1.8, lon: -93.5, lonSpread: 2.4, lat: 8.8, latSpread: 2.0, peaks: [8, 9, 10], motion: { direction: 308, spread: 28, speed: 6.8 } },
     { weight: 1.1, lon: -87.8, lonSpread: 1.8, lat: 19.0, latSpread: 2.4, peaks: [9, 10], motion: { direction: 18, spread: 34, speed: 7.2 } }
+];
+
+const redstoneGenesisProfiles = [
+    { weight: 2.4, lon: 136.5, lonSpread: 6.5, lat: -13.0, latSpread: 3.2, peaks: [1, 2, 3], motion: { direction: 244, spread: 26, speed: 9.2 } },
+    { weight: 1.7, lon: 144.0, lonSpread: 5.0, lat: -17.5, latSpread: 2.8, peaks: [1, 2, 12], motion: { direction: 238, spread: 28, speed: 8.6 } },
+    { weight: 1.1, lon: 129.5, lonSpread: 4.5, lat: -9.5, latSpread: 2.5, peaks: [2, 3], motion: { direction: 252, spread: 30, speed: 9.8 } }
 ];
 
 const genesisProfiles = {
@@ -71,7 +79,9 @@ const genesisProfiles = {
         { weight: 0.45, lon: 20.5, lonSpread: 5.0, lat: 35.2, latSpread: 2.0, peaks: [1, 2, 12], motion: { direction: 70, spread: 60, speed: 5.8 } }
     ],
     [FICTIONIA_BASIN]: fictioniaGenesisProfiles,
-    [FICTIONIA2_BASIN]: fictioniaGenesisProfiles
+    [FICTIONIA2_BASIN]: fictioniaGenesisProfiles,
+    [REDSTONE_BASIN]: redstoneGenesisProfiles,
+    [REDSTONE_GRID_BASIN]: redstoneGenesisProfiles
 };
 
 function randNormal(mean = 0, spread = 1) {
@@ -115,7 +125,7 @@ function isMedicaneBasin(cycloneOrBasin) {
 function getGenesisProtectionHours(cycloneOrBasin) {
     const basin = typeof cycloneOrBasin === 'string' ? cycloneOrBasin : cycloneOrBasin?.basin;
     if (basin === 'MED') return 48;
-    if (isFictioniaBasin(basin)) return 72;
+    if (isCustomMapBasin(basin)) return 72;
     return 60;
 }
 
@@ -227,6 +237,9 @@ function getSeasonalShearVector(cyclone, month = 8) {
     } else if (isFictioniaBasin(basin)) {
         u += 1.2 + 3.8 * nhWinter;
         v += -0.9 + 1.4 * nhWinter;
+    } else if (basin === REDSTONE_BASIN || basin === REDSTONE_GRID_BASIN) {
+        u += -3.0 * shPeak + 4.2 * (1 - shPeak);
+        v += 1.2 * shPeak - 0.6 * (1 - shPeak);
     }
 
     return { u, v };
@@ -401,7 +414,9 @@ function getInitialMotion(lon, lat, basin, profile = null) {
         SATL: { direction: 232, spread: 28, speed: 8 },
         MED: { direction: 88, spread: 48, speed: 6.5 },
         [FICTIONIA_BASIN]: { direction: 300, spread: 30, speed: 9 },
-        [FICTIONIA2_BASIN]: { direction: 300, spread: 30, speed: 9 }
+        [FICTIONIA2_BASIN]: { direction: 300, spread: 30, speed: 9 },
+        [REDSTONE_BASIN]: { direction: 244, spread: 28, speed: 9 },
+        [REDSTONE_GRID_BASIN]: { direction: 244, spread: 28, speed: 9 }
     };
     const motion = profile?.motion || fallbackByBasin[basin] || fallbackByBasin.WPAC;
     const polewardBias = Math.abs(lat) > 18 ? (lat >= 0 ? 12 : -12) : 0;
@@ -709,6 +724,7 @@ export function initializePressureSystems(cyclone, month) {
     const baseLon = cyclone.lon; 
     const isMedicane = isMedicaneBasin(cyclone);
     const isFictionia = isFictioniaBasin(cyclone?.basin);
+    const isRedstone = cyclone?.basin === REDSTONE_BASIN || cyclone?.basin === REDSTONE_GRID_BASIN;
 
     if (isMedicane) {
         tempAllSystems.push({
@@ -752,6 +768,29 @@ export function initializePressureSystems(cyclone, month) {
             strength: -(10 + Math.random() * 8), baseStrength: -(10 + Math.random() * 8),
             velocityX: 0.08 + Math.random() * 0.12, velocityY: -0.04 + (Math.random() - 0.5) * 0.08,
             oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.015 + Math.random() * 0.01, oscillationAmount: 0.18,
+            noiseLayers: []
+        });
+    }
+
+    if (isRedstone) {
+        tempAllSystems.push({
+            type: 'high',
+            x: baseLon + 14 + (Math.random() - 0.5) * 8,
+            y: baseLat - 8 + (Math.random() - 0.5) * 5,
+            baseSigmaX: 24 + Math.random() * 10, sigmaX: 24 + Math.random() * 10, sigmaY: 10 + Math.random() * 5,
+            strength: 14 + Math.random() * 7, baseStrength: 14 + Math.random() * 7,
+            velocityX: -0.08 + (Math.random() - 0.5) * 0.08, velocityY: 0.03 + (Math.random() - 0.5) * 0.08,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.012 + Math.random() * 0.01, oscillationAmount: 0.16,
+            noiseLayers: []
+        });
+        tempAllSystems.push({
+            type: 'low',
+            x: baseLon - 20 + (Math.random() - 0.5) * 12,
+            y: baseLat + 8 + (Math.random() - 0.5) * 5,
+            baseSigmaX: 18 + Math.random() * 8, sigmaX: 18 + Math.random() * 8, sigmaY: 8 + Math.random() * 4,
+            strength: -(9 + Math.random() * 7), baseStrength: -(9 + Math.random() * 7),
+            velocityX: 0.10 + Math.random() * 0.12, velocityY: -0.04 + (Math.random() - 0.5) * 0.08,
+            oscillationPhase: Math.random() * Math.PI * 2, oscillationSpeed: 0.014 + Math.random() * 0.01, oscillationAmount: 0.18,
             noiseLayers: []
         });
     }

@@ -2,19 +2,23 @@
  * terrain-data.js
  * 负责管理地形高程数据和陆地遮罩
  */
-import { getFictioniaLandStatus } from './fictionia-map.js';
+import { getCustomMapLandStatus, isCustomMapFeature } from './fictionia-map.js';
 
 let elevationData = null; // 存储高程图像素数据 (RGBA)
 let landMaskData = null;  // 存储陆地遮罩像素数据 (Alpha channel only is enough, but we use RGBA)
 let mapWidth = 0;
 let mapHeight = 0;
-let fictioniaTerrainActive = false;
+let customTerrainBasin = null;
 
 const MAX_ELEVATION_METERS = 680; // 设定最大海拔
 
 // 初始化地形系统
 export function setFictioniaTerrainActive(active) {
-    fictioniaTerrainActive = !!active;
+    customTerrainBasin = active ? 'FICT' : null;
+}
+
+export function setCustomBasinTerrainActive(basin) {
+    customTerrainBasin = basin || null;
 }
 
 export function initTerrainSystem(imageUrl, worldData) {
@@ -66,7 +70,7 @@ export function initTerrainSystem(imageUrl, worldData) {
                 const terrainWorldData = worldData?.features
                     ? {
                         ...worldData,
-                        features: worldData.features.filter(feature => !feature?.properties?.fictionia)
+                        features: worldData.features.filter(feature => !isCustomMapFeature(feature))
                     }
                     : worldData;
                 pathGenerator(terrainWorldData);
@@ -108,6 +112,11 @@ function getPixelCoords(lon, lat) {
 
 // 获取海拔 (米)
 export function getElevationAt(lon, lat) {
+    if (customTerrainBasin) {
+        const customStatus = getCustomMapLandStatus(customTerrainBasin, lon, lat, 0);
+        if (customStatus.inCustomBounds) return customStatus.isLand ? 120 : 0;
+    }
+
     if (!elevationData) return 0;
     const { x, y } = getPixelCoords(lon, lat);
     const index = y * mapWidth + x;
@@ -121,9 +130,9 @@ export function getElevationAt(lon, lat) {
 // 获取陆地状态 (包含 isLand 和 isNearLand)
 // nearThresholdDeg: 近岸判定阈值，单位度。默认 0.2 度
 export function getLandStatus(lon, lat, nearThresholdDeg = 0.2) {
-    if (fictioniaTerrainActive) {
-        const fictioniaStatus = getFictioniaLandStatus(lon, lat, nearThresholdDeg);
-        if (fictioniaStatus.isLand || fictioniaStatus.isNearLand) return fictioniaStatus;
+    if (customTerrainBasin) {
+        const customStatus = getCustomMapLandStatus(customTerrainBasin, lon, lat, nearThresholdDeg);
+        if (customStatus.inCustomBounds || customStatus.isLand || customStatus.isNearLand) return customStatus;
     }
 
     if (!landMaskData) return { isLand: false, isNearLand: false };

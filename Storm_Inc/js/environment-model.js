@@ -48,6 +48,7 @@ const WARM_POOLS = [
     { label: 'Levantine warm basin', lon: 30, lat: 34, amp: 6, sx: 7, sy: 3.5 },
     { label: 'central Mediterranean warm layer', lon: 13, lat: 36.5, amp: 5, sx: 8, sy: 3.5 },
     { label: 'Fictionia warm current', lon: -92, lat: 17, amp: 13, sx: 5, sy: 5 },
+    { label: 'Redstone basin warm pool', lon: 138, lat: -14, amp: 16, sx: 17, sy: 7 },
     { label: 'Coral Sea', lon: 155, lat: -15, amp: 16, sx: 16, sy: 7 },
     { label: 'South Indian warm pool', lon: 75, lat: -13, amp: 18, sx: 22, sy: 8 }
 ];

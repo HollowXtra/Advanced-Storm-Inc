@@ -74,6 +74,18 @@ export const NAME_LISTS = {
         'Aster', 'Brine', 'Caldera', 'Dovewind', 'Ember', 'Fable', 'Galeon', 'Harbor', 'Ivory', 'Juniper',
         'Kestrel', 'Lucent', 'Morrow', 'Nimbus', 'Orchid', 'Palisade', 'Quartz', 'Riven', 'Solace', 'Talon',
         'Umber', 'Velvet', 'Warden', 'Yarrow', 'Zephyr'
+    ],
+
+    'RED': [
+        'Auburn', 'Briar', 'Copper', 'Drift', 'Emory', 'Flint', 'Garnet', 'Haven', 'Iris', 'Jasper',
+        'Kestrel', 'Lumen', 'Marlow', 'Nova', 'Orlando', 'Portland', 'Quartz', 'River', 'Savannah', 'Talbot',
+        'Umber', 'Verde', 'Willow', 'Xenia', 'York'
+    ],
+
+    'REDG': [
+        'Auburn', 'Briar', 'Copper', 'Drift', 'Emory', 'Flint', 'Garnet', 'Haven', 'Iris', 'Jasper',
+        'Kestrel', 'Lumen', 'Marlow', 'Nova', 'Orlando', 'Portland', 'Quartz', 'River', 'Savannah', 'Talbot',
+        'Umber', 'Verde', 'Willow', 'Xenia', 'York'
     ]
 };
 

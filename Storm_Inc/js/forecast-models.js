@@ -4,7 +4,7 @@
  * [修正版] 修复陆地检测逻辑，检测"预报点"而非"初始点"
  */
 import { getSST, normalizeLongitude } from './utils.js';
-import { calculateSteering, updatePressureSystems } from './cyclone-model.js';
+import { calculateSteering, updatePressureSystems, updateShearEnvironment } from './cyclone-model.js';
 import { calculateBackgroundHumidity } from './visualization.js';
 import { calculateOceanHeatContent } from './environment-model.js';
 
@@ -62,6 +62,7 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
             
             tempCyclone.lat += distanceDeg * Math.sin(angleRad);
             tempCyclone.lon = normalizeLongitude(tempCyclone.lon + (distanceDeg * Math.cos(angleRad)) / Math.cos(tempCyclone.lat * Math.PI / 180));
+            tempCyclone.age = startAge + (t * PATH_STEP_HOURS);
 
             // 2. 强度计算 (12小时/步)
             if (t % STEPS_PER_INTENSITY_UPDATE === 0) {
@@ -126,25 +127,25 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                         mpi *= 1 + ohcSupport * 0.4;
                         mpi += waterFuel * 14;
                     }
-                    const safeShearU = Number.isFinite(shearU) ? shearU : 0;
-                    const safeShearV = Number.isFinite(shearV) ? shearV : 0;
-                    const physicalShear = Math.hypot(safeShearU, safeShearV) * 2.5;
-                    const totalShear = physicalShear * (globalShearSetting / 100.0);
+                    tempCyclone.environmentHumidity = hum;
+                    const shearEnv = updateShearEnvironment(tempCyclone, shearU, shearV, cyclone.currentMonth || 8, globalShearSetting, isMedicane);
+                    const totalShear = shearEnv.effectiveShearKt;
                     const gap = mpi - lastCalculatedIntensity;
                     const changeRate = isMedicane
                         ? (gap > 0 ? Math.random()*0.025 + 0.045 - 0.5/lastCalculatedIntensity - (totalShear * 0.0038) : 0.08 + (totalShear * 0.0024))
                         : (gap > 0 ? Math.random()*0.04 + 0.07 - 0.9/lastCalculatedIntensity - (totalShear * 0.005) : 0.11 + (totalShear * 0.003));
                     const forecastWaterFuel = gap > 0 ? Math.max(0, Math.min(1.2, gap / 90)) : 0;
-                    nextIntensity += gap * (changeRate + forecastWaterFuel * (isMedicane ? 0.012 : 0.022));
-                    const currentForecastAge = startAge + (t * PATH_STEP_HOURS);
+                    const shearAlignmentBoost = shearEnv.alignmentBoostKt || 0;
+                    nextIntensity += gap * (changeRate + forecastWaterFuel * (isMedicane ? 0.012 : 0.022)) + shearAlignmentBoost;
+                    const currentForecastAge = tempCyclone.age;
                     
                     if (tempCyclone.shearEventActive && currentForecastAge < tempCyclone.shearEventEndTime) {
-                        const shearPenalty = tempCyclone.shearEventMagnitude * (Math.random() + 0.5);
+                        const shearPenalty = tempCyclone.shearEventMagnitude * (0.18 + Math.random() * 0.18);
                         nextIntensity -= shearPenalty;
                     }
                 }
 
-                nextIntensity = Math.max(15, nextIntensity);
+                nextIntensity = Math.max(15, Math.min(isMedicane ? 95 : 185, nextIntensity));
                 tempCyclone.intensity = nextIntensity;
                 lastCalculatedIntensity = nextIntensity;
             } 

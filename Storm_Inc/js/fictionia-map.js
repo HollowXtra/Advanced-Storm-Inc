@@ -152,6 +152,9 @@ function pointInRing(lon, lat, ring) {
 }
 
 function isPointInFictioniaLand(lon, lat) {
+    if (FICTIONIA_WATER_FEATURES.some(item => item.geometry.coordinates.some(ring => pointInRing(lon, lat, ring)))) {
+        return false;
+    }
     return FICTIONIA_LAND_FEATURES.some(item => item.geometry.coordinates.some(ring => pointInRing(lon, lat, ring)));
 }
 

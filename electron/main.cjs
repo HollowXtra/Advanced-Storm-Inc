@@ -184,6 +184,8 @@ function createMainWindow() {
               && !!document.querySelector('#basinSelector option[value="FICT2"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
+              && !!document.getElementById('sttCounter')
+              && !!document.getElementById('shearCounter')
               && !!document.getElementById('toggleSteeringButton')
               && !!document.getElementById('warning-list')
               && document.querySelectorAll('.city-label').length > 0
@@ -233,6 +235,8 @@ function createMainWindow() {
               survivedSmokeWindow: !runSimulationSmoke || (simulationAge >= smokeMinAge && activeMapInfo),
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),
+              hasSttCounter: !!document.getElementById('sttCounter'),
+              hasShearCounter: !!document.getElementById('shearCounter'),
               hasSteeringToggle: !!document.getElementById('toggleSteeringButton'),
               hasWarningPanel: !!document.getElementById('warning-list'),
               cityLabelCount: document.querySelectorAll('.city-label').length,

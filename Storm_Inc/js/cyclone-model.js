@@ -173,6 +173,184 @@ function calculateStormStructure(cyclone, totalShear = 0) {
     };
 }
 
+function angleDeltaDegrees(a, b) {
+    let diff = (a - b + 540) % 360 - 180;
+    return Math.abs(diff);
+}
+
+function vectorDirectionDegrees(u, v) {
+    if (Math.hypot(u, v) < 0.001) return 0;
+    return (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
+}
+
+function classifyShear(shearKt) {
+    if (shearKt < 10) return 'LIGHT';
+    if (shearKt < 20) return 'MODERATE';
+    if (shearKt < 34) return 'STRONG';
+    return 'EXTREME';
+}
+
+function getSeasonalShearVector(cyclone, month = 8) {
+    const basin = cyclone?.basin || 'WPAC';
+    const lat = Number(cyclone?.lat || 0);
+    const absLat = Math.abs(lat);
+    const nhWinter = Math.max(0, Math.cos((month - 1) * Math.PI / 6));
+    const nhPeak = Math.max(0, Math.cos((month - 8) * Math.PI / 6));
+    const shPeak = Math.max(0, Math.cos((month - 2) * Math.PI / 6));
+    const jetStrength = clamp((absLat - 20) / 22, 0, 1);
+
+    let u = (lat >= 0 ? 1 : -1) * jetStrength * (4.5 + nhWinter * 4.5);
+    let v = 0;
+
+    if (basin === 'NATL') {
+        u += 3.8 * (1 - nhPeak) - 1.4 * nhPeak;
+        v += lat >= 0 ? -1.4 * nhPeak : 0;
+    } else if (basin === 'EPAC') {
+        u += 1.8 * (1 - nhPeak) - 1.0 * nhPeak;
+        v += -0.8 * nhPeak;
+    } else if (basin === 'WPAC') {
+        u += 3.4 * nhWinter - 1.2 * nhPeak;
+        v += 1.6 * nhWinter;
+    } else if (basin === 'NIO') {
+        u += month >= 6 && month <= 9 ? 8.5 : 3.0;
+        v += month >= 6 && month <= 9 ? -2.2 : 0.8;
+    } else if (basin === 'SHEM' || basin === 'SIO') {
+        u += -3.6 * shPeak + 5.0 * (1 - shPeak);
+        v += 1.6 * shPeak;
+    } else if (basin === 'SATL') {
+        u += 7.5;
+        v += -1.8;
+    } else if (basin === 'MED') {
+        const medicaneSeason = month >= 9 || month <= 2 ? 1 : 0;
+        u += medicaneSeason ? 2.2 : 7.2;
+        v += medicaneSeason ? -1.0 : 2.0;
+    } else if (isFictioniaBasin(basin)) {
+        u += 1.2 + 3.8 * nhWinter;
+        v += -0.9 + 1.4 * nhWinter;
+    }
+
+    return { u, v };
+}
+
+export function updateShearEnvironment(cyclone, shearU, shearV, month = 8, globalShearSetting = 100, isMedicane = false) {
+    const setting = clamp((Number(globalShearSetting) || 100) / 100, 0, 2.4);
+    const rawU = (Number.isFinite(shearU) ? shearU : 0) * 2.15;
+    const rawV = (Number.isFinite(shearV) ? shearV : 0) * 2.15;
+    const seasonal = getSeasonalShearVector(cyclone, month);
+    let vectorU = rawU + seasonal.u;
+    let vectorV = rawV + seasonal.v;
+    let baseShear = Math.hypot(vectorU, vectorV) * setting;
+
+    const medicaneSeason = month >= 9 || month <= 2 ? 1 : 0;
+    if (isMedicane) {
+        baseShear *= 0.72 + (medicaneSeason ? -0.05 : 0.15);
+    }
+
+    const intensity = Number(cyclone?.intensity || 0);
+    const age = Number(cyclone?.age || 0);
+    const stormCanBurst = !cyclone?.isTransitioning && !cyclone?.isExtratropical;
+    const burstBaseChance = isMedicane
+        ? (medicaneSeason ? 0.018 : 0.045)
+        : clamp((baseShear - 14) / 120, 0.006, 0.055) * setting;
+
+    if (cyclone.shearBurstActive || cyclone.shearEventActive) {
+        const endTime = Number(cyclone.shearBurstEndTime || cyclone.shearEventEndTime || age);
+        if (age >= endTime) {
+            cyclone.shearBurstActive = false;
+            cyclone.shearBurstMagnitude = 0;
+            cyclone.shearEventActive = false;
+            cyclone.shearEventMagnitude = 0;
+        } else {
+            const startTime = Number(cyclone.shearBurstStartTime || Math.max(0, endTime - 18));
+            const progress = clamp((age - startTime) / Math.max(3, endTime - startTime), 0, 1);
+            const pulse = 0.45 + Math.sin(progress * Math.PI) * 0.75;
+            const burstMag = Number(cyclone.shearBurstMagnitude || cyclone.shearEventMagnitude || 0) * pulse;
+            const burstDir = Number.isFinite(cyclone.shearBurstDirectionDeg) ? cyclone.shearBurstDirectionDeg : vectorDirectionDegrees(vectorU, vectorV);
+            const burstRad = (90 - burstDir) * Math.PI / 180;
+            vectorU += Math.cos(burstRad) * burstMag;
+            vectorV += Math.sin(burstRad) * burstMag;
+            baseShear += Math.max(0, burstMag);
+            cyclone.shearEventActive = true;
+            cyclone.shearEventEndTime = endTime;
+            cyclone.shearEventMagnitude = Number(cyclone.shearBurstMagnitude || 0);
+        }
+    } else if (stormCanBurst && Math.random() < burstBaseChance) {
+        const duration = 9 + Math.floor(Math.random() * (isMedicane ? 18 : 30));
+        cyclone.shearBurstActive = true;
+        cyclone.shearBurstStartTime = age;
+        cyclone.shearBurstEndTime = age + duration;
+        cyclone.shearBurstMagnitude = clamp(5 + Math.random() * 13 + Math.max(0, setting - 1) * 8, 4, isMedicane ? 18 : 28);
+        cyclone.shearBurstDirectionDeg = (vectorDirectionDegrees(vectorU, vectorV) + (Math.random() - 0.5) * 70 + 360) % 360;
+        cyclone.shearEventActive = true;
+        cyclone.shearEventEndTime = cyclone.shearBurstEndTime;
+        cyclone.shearEventMagnitude = cyclone.shearBurstMagnitude;
+    }
+
+    const previousShear = Number.isFinite(cyclone.shearMemoryKt) ? cyclone.shearMemoryKt : baseShear;
+    const memory = previousShear * 0.58 + baseShear * 0.42;
+    const humidity = Number(cyclone.environmentHumidity || 72);
+    const ohc = Number(cyclone.ohcKjCm2 || 0);
+    const waterFuel = Number(cyclone.waterFuelIndex || 0);
+    const shearDir = vectorDirectionDegrees(vectorU, vectorV);
+    const motionDir = Number.isFinite(cyclone.direction) ? cyclone.direction : shearDir;
+    const shearMotionAngle = angleDeltaDegrees(shearDir, motionDir);
+    const directionalStress = shearMotionAngle < 55 ? 0.92 : (shearMotionAngle > 135 ? 1.12 : 1);
+    const structureResistance = clamp((intensity - 35) / 95, 0, 0.34)
+        + clamp((humidity - 62) / 28, 0, 0.25)
+        + clamp((ohc - (isMedicane ? 18 : 65)) / (isMedicane ? 75 : 145), 0, 0.2)
+        + clamp(waterFuel * 0.18, 0, 0.18);
+    const dryVent = humidity < 60 ? clamp((60 - humidity) / 24, 0, 0.45) : 0;
+    const ventilation = clamp(0.72 + memory / 35 + dryVent, 0.65, 2.05);
+    const effectiveShear = clamp(memory * directionalStress * (1 + dryVent) * (1 - structureResistance * 0.48), 0, 95);
+    const tiltIndex = clamp((effectiveShear - 7) / (isMedicane ? 25 : 29), 0, 1.7);
+    const alignmentBoostKt = effectiveShear >= 8 && effectiveShear <= 24 && humidity >= 66
+        ? clamp((24 - effectiveShear) / 16, 0, 1) * clamp((humidity - 64) / 18, 0, 1) * clamp((ohc - (isMedicane ? 12 : 45)) / (isMedicane ? 55 : 105), 0, 1) * (isMedicane ? 0.42 : 0.72)
+        : 0;
+
+    cyclone.shearMemoryKt = Number(memory.toFixed(2));
+    cyclone.shearTendencyKt = Number((memory - previousShear).toFixed(2));
+    cyclone.totalShearKt = Number(memory.toFixed(1));
+    cyclone.effectiveShearKt = Number(effectiveShear.toFixed(1));
+    cyclone.shearDirectionDeg = Number(shearDir.toFixed(0));
+    cyclone.shearClass = classifyShear(memory);
+    cyclone.shearVentilation = Number(ventilation.toFixed(2));
+    cyclone.shearTiltIndex = Number(tiltIndex.toFixed(2));
+    cyclone.shearMotionAngleDeg = Number(shearMotionAngle.toFixed(0));
+    cyclone.shearAlignmentBoostKt = Number(alignmentBoostKt.toFixed(2));
+
+    return {
+        totalShearKt: cyclone.totalShearKt,
+        effectiveShearKt: cyclone.effectiveShearKt,
+        shearDirectionDeg: cyclone.shearDirectionDeg,
+        shearClass: cyclone.shearClass,
+        tiltIndex: cyclone.shearTiltIndex,
+        ventilation,
+        alignmentBoostKt
+    };
+}
+
+function updateShortTermTrend(cyclone) {
+    const track = Array.isArray(cyclone.track) ? cyclone.track : [];
+    const current = Number(cyclone.intensity || 0);
+    const previous = track.length >= 3
+        ? Number(track[track.length - 3]?.[2] || current)
+        : Number(track[0]?.[2] || current);
+    const delta = current - previous;
+    const absDelta = Math.abs(delta);
+    const trendCode = absDelta < 3 ? 'S' : (delta > 0 ? 'I' : 'W');
+    const trendValue = trendCode === 'S'
+        ? 0
+        : clamp(Math.round((absDelta / 10) * 2) / 2, 0.5, 3.5);
+
+    cyclone.shortTermTrendCode = trendCode;
+    cyclone.shortTermTrendDeltaKt = Number(delta.toFixed(1));
+    cyclone.shortTermTrendValue = Number(trendValue.toFixed(1));
+    cyclone.shortTermTrendLabel = `${trendCode}${trendValue.toFixed(1)}/06H`;
+    cyclone.shortTermTrendText = trendCode === 'S'
+        ? 'STEADY'
+        : (trendCode === 'I' ? `UP ${Math.round(absDelta)}KT` : `DOWN ${Math.round(absDelta)}KT`);
+}
+
 function sampleClampedNormal(mean, spread, min, max) {
     for (let i = 0; i < 6; i++) {
         const value = randNormal(mean, spread);
@@ -343,7 +521,8 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
     let useCustomCoords = (customLon !== null && customLat !== null);
     
     if (useCustomCoords) {
-        isOverLand = world.features.some(feature => d3.geoContains(feature, [customLon, customLat]));
+        const customLandStatus = getLandStatus(customLon, customLat);
+        isOverLand = customLandStatus.isLand;
         if (isOverLand) {
             console.warn(`Custom coordinates (${customLon}, ${customLat}) are on land. Falling back to random generation.`);
             useCustomCoords = false;
@@ -426,6 +605,25 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         shearEventActive: false,
         shearEventEndTime: 0,
         shearEventMagnitude: 0,
+        shearBurstActive: false,
+        shearBurstStartTime: 0,
+        shearBurstEndTime: 0,
+        shearBurstMagnitude: 0,
+        shearBurstDirectionDeg: 0,
+        shearMemoryKt: 0,
+        shearTendencyKt: 0,
+        shearDirectionDeg: 0,
+        effectiveShearKt: 0,
+        shearClass: 'LIGHT',
+        shearVentilation: 1,
+        shearTiltIndex: 0,
+        shearMotionAngleDeg: 0,
+        shearAlignmentBoostKt: 0,
+        shortTermTrendCode: 'S',
+        shortTermTrendLabel: 'S0.0/06H',
+        shortTermTrendText: 'STEADY',
+        shortTermTrendDeltaKt: 0,
+        shortTermTrendValue: 0,
         track: [],
         status: 'active',
         isTransitioning: false,
@@ -912,32 +1110,10 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
 
     // --- Steering ---
     const { steerU, steerV, shearU, shearV } = calculateSteering(updatedCyclone.lon, updatedCyclone.lat, pressureSystems);
-    const physicalShear = Math.hypot(shearU, shearV) * 2.0; 
-    
-    // Wind Shear
-    let totalShear = physicalShear * (globalShearSetting / 100.0);
-    const isWinterHalf = (month >= 11 || month <= 4);
     const medicaneSeason = (month >= 9 || month <= 2) ? 1 : 0;
-    if (isMedicane) {
-        totalShear *= 0.78 + (medicaneSeason ? -0.08 : 0.08);
-    }
-    const shearEventProb = isMedicane
-        ? (0.025 + (medicaneSeason ? 0.01 : 0.04) * (globalShearSetting / 100))
-        : ((isWinterHalf && updatedCyclone.lon > 100 && updatedCyclone.lon < 121 && updatedCyclone.lat > 16) ? 0.55 : (isWinterHalf ? 0.045 * (globalShearSetting ** 2 / 10000) : 0.03 * (globalShearSetting ** 2 / 10000)));
-    // Random shear event
-    if (updatedCyclone.shearEventActive) {
-        if (updatedCyclone.age >= updatedCyclone.shearEventEndTime) {
-            updatedCyclone.shearEventActive = false;
-            updatedCyclone.shearEventMagnitude = 0;
-        } else {
-            totalShear += Math.max(0, updatedCyclone.shearEventMagnitude);
-        }
-    } else if (Math.random() < shearEventProb && !updatedCyclone.isTransitioning) {
-        updatedCyclone.shearEventActive = true;
-        updatedCyclone.shearEventEndTime = updatedCyclone.age + (1 + Math.random()*48);
-        updatedCyclone.shearEventMagnitude = -3 + Math.random() * 6 + 1.8 * Math.abs(month - 8) ** 0.5 + Math.max(0,(globalShearSetting / 10 - 10));
-    }
-    updatedCyclone.totalShearKt = Number(totalShear.toFixed(1));
+    const shearEnv = updateShearEnvironment(updatedCyclone, shearU, shearV, month, globalShearSetting, isMedicane);
+    const totalShear = shearEnv.totalShearKt;
+    const shearForIntensity = shearEnv.effectiveShearKt;
 
     // Movement
     const prevSteerU = Number.isFinite(updatedCyclone.steerMemoryU) ? updatedCyclone.steerMemoryU : steerU;
@@ -1039,7 +1215,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             ? Math.min(weakeningFactor + JPAdj, 0.94)
             : weakeningFactor + JPAdj;
         updatedCyclone.intensity *= terrainLandFactor;
-        if (nearCoastalWaterFeed && totalShear < (isMedicane ? 28 : 25)) {
+        if (nearCoastalWaterFeed && shearForIntensity < (isMedicane ? 28 : 25)) {
             updatedCyclone.intensity += clamp(waterFuelIndex * 0.12, 0, 0.18);
         }
         updatedCyclone.circulationSize *= 1 + terrainElevation * 0.0008;
@@ -1052,7 +1228,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         const coastalFeedAdjustment = nearCoastalWaterFeed ? clamp(waterFuelIndex * 0.025, 0, 0.035) : 0;
         const landFactor = coastalDecayBase + updatedCyclone.circulationSize*0.0001*EXf + JPAdjustment + PHAdjustment + AUAdjustment + coastalFeedAdjustment;
         updatedCyclone.intensity *= isOverLand ? Math.min(landFactor, lowlandGraceActive ? 0.96 : 0.94) : landFactor;
-        if (nearCoastalWaterFeed && totalShear < (isMedicane ? 30 : 27) && updatedCyclone.intensity < 50) {
+        if (nearCoastalWaterFeed && shearForIntensity < (isMedicane ? 30 : 27) && updatedCyclone.intensity < 50) {
             updatedCyclone.intensity += clamp(waterFuelIndex * 0.14, 0, 0.22);
         }
         updatedCyclone.speed *= 0.99;
@@ -1079,7 +1255,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         let mpi = sst > 25.0 ? 264.28 * (1 - Math.exp(-0.182 * (sst - 25.00))) : 0; // [保留]
         
         if (isMedicane) {
-            const upperSupport = clamp(Number(updatedCyclone.medicaneUpperSupport || 0.45) + (medicaneSeason ? 0.16 : -0.06) - totalShear / 95, 0, 1);
+            const upperSupport = clamp(Number(updatedCyclone.medicaneUpperSupport || 0.45) + (medicaneSeason ? 0.16 : -0.06) - shearForIntensity / 95, 0, 1);
             mpi = sst > 17.0
                 ? clamp(26 + (sst - 17.0) * 6.4 + upperSupport * 27 + (globalTemp - 289) * 1.8, 22, 88)
                 : 0;
@@ -1117,7 +1293,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             case 'recovering':
                 updatedCyclone.isERCActive = true;
                 updatedCyclone.circulationSize *= 0.998;
-                if (updatedCyclone.ohcKjCm2 >= 55 && totalShear < 22) {
+                if (updatedCyclone.ohcKjCm2 >= 55 && shearForIntensity < 22) {
                     updatedCyclone.intensity += Math.random() * 1.8;
                 }
                 if (updatedCyclone.age >= updatedCyclone.ercEndTime) {
@@ -1150,7 +1326,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             : 0;
         let intensificationRate = Math.random() * (0.14 + ri) * Math.min(1, ((updatedCyclone.intensity - 13) / 65)) - latF; // [保留]
         if (isMedicane) {
-            intensificationRate = Math.random() * (0.085 + ri * 0.45) * clamp((updatedCyclone.intensity - 14) / 48, 0.15, 1.0) + 0.012 - totalShear * 0.00055;
+            intensificationRate = Math.random() * (0.085 + ri * 0.45) * clamp((updatedCyclone.intensity - 14) / 48, 0.15, 1.0) + 0.012 - shearForIntensity * 0.00055;
         }
         intensificationRate += updatedCyclone.waterFuelIndex
             * (isMedicane ? 0.021 : 0.042)
@@ -1163,7 +1339,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         let potentialChange = (mpi - updatedCyclone.intensity) * intensificationRate;
         
         // Shear Factors
-        let shear = totalShear / (isMedicane ? 13.5 : 10.0);
+        let shear = shearForIntensity / (isMedicane ? 13.5 : 10.0);
         
         // Fix term
         const nioShearBoost = (updatedCyclone.lat >= 5 && updatedCyclone.lat <= 30 && updatedCyclone.lon >= 30 && updatedCyclone.lon <= 100) ? 8.5 : 0;
@@ -1179,7 +1355,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         shear += Math.max(0, (Math.abs(updatedCyclone.lat) * latGradientFactor - 30 + nioShearBoost + shemShearBoost)) / 20;
         if (isMedicane) {
             shear = Math.max(0, shear * 0.62 - 0.55);
-            potentialChange += clamp(Number(updatedCyclone.medicaneUpperSupport || 0.5) - totalShear / 70, -0.2, 0.55);
+            potentialChange += clamp(Number(updatedCyclone.medicaneUpperSupport || 0.5) - shearForIntensity / 70, -0.2, 0.55);
         }
 
         // Dry Air Logic
@@ -1203,9 +1379,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             const sizeSensitivity = 600 - cyclone.circulationSize; 
             dryAirFactor = (60 - effectiveHumidity) * 0.0002 * sizeSensitivity;
         }
+        const shearAlignmentBoost = (!isOverLand && !updatedCyclone.isTransitioning && !updatedCyclone.isExtratropical && shearForIntensity >= 8 && shearForIntensity <= 24)
+            ? clamp((24 - shearForIntensity) / 16, 0, 1)
+                * clamp((effectiveHumidity - 64) / 18, 0, 1)
+                * clamp(updatedCyclone.waterFuelIndex, 0, 1.2)
+                * (isMedicane ? 0.42 : 0.72)
+            : 0;
+        updatedCyclone.shearAlignmentBoostKt = Number(shearAlignmentBoost.toFixed(2));
+        potentialChange += shearAlignmentBoost;
         const shearFuel = isMedicane
-            ? clamp((36 - totalShear) / 30, 0, 1.1)
-            : clamp((32 - totalShear) / 30, 0, 1.1);
+            ? clamp((36 - shearForIntensity) / 30, 0, 1.1)
+            : clamp((32 - shearForIntensity) / 30, 0, 1.1);
         const humidityFuel = clamp((effectiveHumidity - 55) / 25, 0, 1.2);
         const intensityGapFuel = clamp((mpi - updatedCyclone.intensity) / 75, 0, 1.2);
         const stageFuel = updatedCyclone.intensity < 34 ? 0.85 : (updatedCyclone.intensity < 65 ? 0.62 : 0.38);
@@ -1214,13 +1398,13 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             : 0;
         const deepWarmCoreBoost = (!isOverLand && !updatedCyclone.isTransitioning && updatedCyclone.ohcKjCm2 >= (isMedicane ? 22 : 85))
             ? updatedCyclone.waterFuelIndex
-                * clamp((isMedicane ? 34 : 38) - totalShear, 0, isMedicane ? 28 : 36) / (isMedicane ? 28 : 36)
+                * clamp((isMedicane ? 34 : 38) - shearForIntensity, 0, isMedicane ? 28 : 36) / (isMedicane ? 28 : 36)
                 * clamp((mpi - updatedCyclone.intensity) / 60, 0, 1.2)
                 * (updatedCyclone.intensity < 34 ? 1.15 : 0.72)
             : 0;
         const warmWaterOrganizationBoost = (!isOverLand && !updatedCyclone.isTransitioning && updatedCyclone.waterFuelIndex >= 0.65 && updatedCyclone.intensity < 45)
             ? clamp((updatedCyclone.ohcKjCm2 - (isMedicane ? 16 : 70)) / (isMedicane ? 60 : 110), 0, 1.15)
-                * clamp(((isMedicane ? 36 : 42) - totalShear) / (isMedicane ? 30 : 38), isMedicane ? 0.08 : 0.12, 1.15)
+                * clamp(((isMedicane ? 36 : 42) - shearForIntensity) / (isMedicane ? 30 : 38), isMedicane ? 0.08 : 0.12, 1.15)
                 * (updatedCyclone.intensity < 34 ? (isMedicane ? 0.85 : 1.85) : (isMedicane ? 0.5 : 0.95))
             : 0;
         const totalWaterBoost = waterFuelBoost + deepWarmCoreBoost + warmWaterOrganizationBoost;
@@ -1243,7 +1427,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             const oceanSupport = updatedCyclone.ohcKjCm2 >= (isMedicane ? 8 : 35);
             const moistureSupport = Number(updatedCyclone.environmentHumidity || 0) >= 65;
             const shearLimit = isMedicane ? 32 : 34;
-            if (!lowlandGraceActive && totalShear < shearLimit && (oceanSupport || moistureSupport)) {
+            if (!lowlandGraceActive && shearForIntensity < shearLimit && (oceanSupport || moistureSupport)) {
                 updatedCyclone.intensity += 0.25 + clamp(updatedCyclone.waterFuelIndex * (isMedicane ? 0.45 : 0.65), 0, 0.85);
             }
         }
@@ -1282,7 +1466,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     updatedCyclone.circulationSize = isMedicane
         ? Math.max(95, Math.min(updatedCyclone.circulationSize, 380))
         : Math.max(100, Math.min(updatedCyclone.circulationSize, 800));
-    updatedCyclone.intensity = Math.max(10, updatedCyclone.intensity);
+    updatedCyclone.intensity = clamp(updatedCyclone.intensity, 10, isMedicane ? 95 : 185);
     
     const maxMotionSpeed = isMedicane ? (updatedCyclone.isExtratropical ? 34 : 24) : (updatedCyclone.isExtratropical ? 44 : 32);
     updatedCyclone.speed = clamp(updatedCyclone.speed, 2, maxMotionSpeed);
@@ -1410,6 +1594,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.formationChance7d || 0,
         !!updatedCyclone.isInvest
     ]);
+    updateShortTermTrend(updatedCyclone);
 
     if (isMedicane && (updatedCyclone.lon < -12 || updatedCyclone.lon > 45 || updatedCyclone.lat < 27 || updatedCyclone.lat > 48)) {
         updatedCyclone.status = 'dissipated';

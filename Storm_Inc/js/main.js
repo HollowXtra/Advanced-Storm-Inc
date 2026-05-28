@@ -129,6 +129,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const surgeCounter = document.getElementById('surgeCounter');
     const ohcCounter = document.getElementById('ohcCounter');
     const parStatus = document.getElementById('parStatus');
+    const sttCounter = document.getElementById('sttCounter');
+    const sttDelta = document.getElementById('sttDelta');
+    const shearCounter = document.getElementById('shearCounter');
+    const shearMeta = document.getElementById('shearMeta');
     const warningList = document.getElementById('warning-list');
     const warningCycle = document.getElementById('warning-cycle');
     const investIdCounter = document.getElementById('investIdCounter');
@@ -213,6 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cycloneWaterFuelBoostKt: Number(state.cyclone?.waterFuelBoostKt || 0),
             cycloneMaxWaterFuelBoostKt: Number(state.cyclone?.maxWaterFuelBoostKt || 0),
             cycloneShearKt: Number(state.cyclone?.totalShearKt || 0),
+            cycloneEffectiveShearKt: Number(state.cyclone?.effectiveShearKt || 0),
+            cycloneShearClass: state.cyclone?.shearClass || '',
+            cycloneStt: state.cyclone?.shortTermTrendLabel || '',
             simulationRunning: !!state.simulationInterval,
             visibleLandCount: document.querySelectorAll('.land').length
         })
@@ -1215,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.5';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.6';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -1861,6 +1868,29 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
                 parStatus.classList.add('text-slate-400');
                 parStatus.classList.remove('text-cyan-300');
             }
+        }
+        if (sttCounter) {
+            const sttCode = state.cyclone?.shortTermTrendCode || 'S';
+            sttCounter.textContent = state.cyclone?.shortTermTrendLabel || 'S0.0/06H';
+            sttCounter.className = `font-mono font-bold text-sm leading-tight ${
+                sttCode === 'I' ? 'text-emerald-200' : (sttCode === 'W' ? 'text-red-200' : 'text-fuchsia-100')
+            }`;
+        }
+        if (sttDelta) {
+            sttDelta.textContent = state.cyclone?.shortTermTrendText || 'STEADY';
+        }
+        if (shearCounter) {
+            const shearKt = Math.round(state.cyclone?.totalShearKt || 0);
+            const effectiveShear = Math.round(state.cyclone?.effectiveShearKt || shearKt);
+            shearCounter.textContent = `${shearKt} kt`;
+            shearCounter.title = `Effective shear ${effectiveShear} kt`;
+        }
+        if (shearMeta) {
+            const shearClass = state.cyclone?.shearClass || 'LIGHT';
+            const shearDir = Number(state.cyclone?.shearDirectionDeg || 0);
+            const tendency = Number(state.cyclone?.shearTendencyKt || 0);
+            const trend = Math.abs(tendency) < 0.4 ? 'steady' : (tendency > 0 ? 'rising' : 'falling');
+            shearMeta.textContent = `${shearClass} ${directionToCompass(shearDir)} ${trend}`;
         }
         updateInvestPanel();
     }

@@ -424,8 +424,8 @@
         }
         .intro-map-bg {
             background:
-                radial-gradient(circle at 65% 35%, rgba(20, 184, 166, 0.18), transparent 26rem),
-                radial-gradient(circle at 22% 72%, rgba(245, 158, 11, 0.14), transparent 20rem),
+                linear-gradient(115deg, rgba(14, 165, 233, 0.12), transparent 34%),
+                repeating-linear-gradient(30deg, rgba(148, 163, 184, 0.05) 0 1px, transparent 1px 32px),
                 linear-gradient(135deg, #020617 0%, #050816 44%, #09090b 100%);
         }
         .intro-scan {
@@ -444,6 +444,39 @@
                 radial-gradient(circle at center, transparent 0 9%, rgba(255,255,255,0.85) 10% 11%, transparent 12% 100%);
             filter: drop-shadow(0 0 44px rgba(34, 211, 238, 0.22));
             animation: introSpin 18s linear infinite;
+        }
+        .intro-radar {
+            width: min(54vw, 520px);
+            aspect-ratio: 1;
+            border-radius: 9999px;
+            border: 1px solid rgba(34, 211, 238, 0.18);
+            background:
+                repeating-radial-gradient(circle at center, transparent 0 38px, rgba(34, 211, 238, 0.12) 39px 40px),
+                conic-gradient(from 18deg, rgba(34, 211, 238, 0.28), transparent 68deg, transparent 360deg);
+            mask-image: radial-gradient(circle at center, black 0%, transparent 78%);
+            animation: introRadarSweep 5.5s linear infinite;
+        }
+        .intro-radar::before {
+            content: "";
+            position: absolute;
+            inset: 47% 8% auto 8%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.75), transparent);
+        }
+        .intro-radar::after {
+            content: "";
+            position: absolute;
+            left: 49%;
+            top: 8%;
+            bottom: 8%;
+            width: 1px;
+            background: linear-gradient(180deg, transparent, rgba(251, 191, 36, 0.55), transparent);
+        }
+        .intro-status-strip {
+            border-top: 1px solid rgba(255,255,255,0.12);
+            border-bottom: 1px solid rgba(255,255,255,0.12);
+            background: rgba(2, 6, 23, 0.48);
+            backdrop-filter: blur(10px);
         }
         .intro-cyclone::before,
         .intro-cyclone::after {
@@ -471,11 +504,26 @@
             border: 1px solid rgba(255, 255, 255, 0.12);
             backdrop-filter: blur(18px);
             box-shadow: 0 24px 90px rgba(0,0,0,0.55);
+            border-radius: 8px;
+        }
+        .menu-panel-accent {
+            background:
+                linear-gradient(180deg, rgba(34, 211, 238, 0.08), transparent 38%),
+                rgba(2, 6, 23, 0.76);
+        }
+        .menu-stat {
+            min-height: 4.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.42);
         }
         @keyframes introSpin {
             from { transform: translateY(-50%) rotate(0deg) scale(1); }
             50% { transform: translateY(-50%) rotate(180deg) scale(1.04); }
             to { transform: translateY(-50%) rotate(360deg) scale(1); }
+        }
+        @keyframes introRadarSweep {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
         @keyframes introPulse {
             0%, 100% { opacity: 0.18; transform: scale(0.92); }
@@ -484,7 +532,8 @@
         @media (prefers-reduced-motion: reduce) {
             .intro-cyclone,
             .intro-cyclone::before,
-            .intro-cyclone::after {
+            .intro-cyclone::after,
+            .intro-radar {
                 animation: none;
             }
         }
@@ -523,15 +572,23 @@
     <div id="gameIntroOverlay" class="fixed inset-0 z-[9000] overflow-hidden text-white transition-all duration-700">
         <div class="intro-map-bg absolute inset-0"></div>
         <div class="intro-scan absolute inset-0 opacity-70"></div>
+        <div class="intro-radar absolute -left-24 bottom-[-9rem] opacity-70 pointer-events-none"></div>
         <div class="intro-cyclone absolute -right-24 top-1/2 -translate-y-1/2 opacity-70 pointer-events-none"></div>
         <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/75 to-transparent pointer-events-none"></div>
         <div class="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/80 to-transparent pointer-events-none"></div>
+        <div class="intro-status-strip absolute inset-x-0 bottom-7 hidden items-center justify-center gap-5 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.28em] text-slate-300 md:flex">
+            <span class="text-cyan-200">VWS Engine Online</span>
+            <span class="text-slate-600">/</span>
+            <span class="text-amber-200">STT Ready</span>
+            <span class="text-slate-600">/</span>
+            <span class="text-emerald-200">Alpha 1.0.3.6</span>
+        </div>
 
         <section id="introScene" class="absolute inset-0 flex items-center px-5 md:px-14">
             <div class="max-w-3xl">
                 <div class="mb-5 inline-flex items-center gap-3 border border-cyan-300/30 bg-cyan-950/25 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.32em] text-cyan-200">
                     <span class="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.9)]"></span>
-                    Alpha Basin Engine
+                    Alpha 1.0.3.6 Basin Engine
                 </div>
                 <h2 class="font-black italic leading-none tracking-tight text-6xl sm:text-7xl md:text-8xl">
                     STORM<span class="text-cyan-300">_</span>INC
@@ -552,11 +609,31 @@
             <button id="menuCloseButton" class="absolute right-5 top-5 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-slate-300 transition hover:border-red-300/60 hover:text-red-200" title="Close Menu">
                 <i class="fa-solid fa-xmark"></i>
             </button>
-            <div class="grid w-full max-w-5xl gap-4 md:grid-cols-[1.05fr_0.95fr]">
-                <div class="menu-panel p-5 md:p-7">
-                    <div class="mb-6">
+            <div class="grid w-full max-w-6xl gap-4 md:grid-cols-[1.05fr_0.95fr]">
+                <div class="menu-panel menu-panel-accent p-5 md:p-7">
+                    <div class="mb-6 flex items-start justify-between gap-4">
+                        <div>
                         <div class="text-[10px] font-mono font-bold uppercase tracking-[0.35em] text-amber-200">Alpha Main Menu</div>
                         <h2 class="mt-2 text-4xl font-black italic tracking-tight text-white md:text-6xl">STORM_INC</h2>
+                        </div>
+                        <div class="border border-emerald-300/30 bg-emerald-950/25 px-3 py-2 text-right font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
+                            <div>Build</div>
+                            <div class="text-white">1.0.3.6</div>
+                        </div>
+                    </div>
+                    <div class="mb-4 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
+                        <div class="menu-stat p-3 text-cyan-100">
+                            <div class="text-slate-500">Mode</div>
+                            <div class="mt-1 font-bold text-white">Sim</div>
+                        </div>
+                        <div class="menu-stat p-3 text-amber-100">
+                            <div class="text-slate-500">Shear</div>
+                            <div class="mt-1 font-bold text-white">VWS</div>
+                        </div>
+                        <div class="menu-stat p-3 text-emerald-100">
+                            <div class="text-slate-500">Trend</div>
+                            <div class="mt-1 font-bold text-white">STT</div>
+                        </div>
                     </div>
                     <div class="grid gap-3">
                         <button id="menuStartButton" class="menu-button menu-button-primary flex items-center justify-between rounded-lg px-5 py-3 text-left text-sm font-black uppercase tracking-[0.22em] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-45">
@@ -589,7 +666,7 @@
                                     <i class="fa-solid fa-shuffle"></i>
                                 </button>
                             </div>
-                            <iframe id="menuLofiFrame" class="h-52 w-full rounded-lg border border-white/10 bg-black/40" title="YouTube lofi radio" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                            <iframe id="menuLofiFrame" class="h-44 w-full rounded-lg border border-white/10 bg-black/40" title="YouTube lofi radio" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe>
                         </div>
                     </div>
                 </div>
@@ -634,10 +711,19 @@
                                 <input id="menuYearSelector" type="number" min="1851" max="2200" step="1" class="h-11 rounded-lg border border-white/15 bg-black/45 px-3 text-sm font-mono text-slate-100 outline-none transition focus:border-cyan-300">
                             </label>
                         </div>
-                        <div class="grid grid-cols-3 gap-2 pt-2 text-center font-mono text-[10px] uppercase tracking-[0.2em]">
-                            <div class="border border-white/10 bg-white/5 px-2 py-3 text-cyan-100">OHC</div>
-                            <div class="border border-white/10 bg-white/5 px-2 py-3 text-amber-100">PAR</div>
-                            <div class="border border-white/10 bg-white/5 px-2 py-3 text-red-100">EWW</div>
+                        <div class="grid grid-cols-3 gap-2 pt-2 text-center font-mono text-[10px] uppercase tracking-[0.16em]">
+                            <div class="menu-stat px-2 py-3 text-cyan-100">
+                                <div class="text-slate-500">Water</div>
+                                <div class="mt-1 font-bold">OHC</div>
+                            </div>
+                            <div class="menu-stat px-2 py-3 text-amber-100">
+                                <div class="text-slate-500">Local</div>
+                                <div class="mt-1 font-bold">PAR</div>
+                            </div>
+                            <div class="menu-stat px-2 py-3 text-red-100">
+                                <div class="text-slate-500">Alert</div>
+                                <div class="mt-1 font-bold">EWW</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1005,6 +1091,19 @@
                             </div>
                         </div>
 
+                        <div id="analysis-panel" class="grid grid-cols-2 gap-3">
+                            <div class="bg-fuchsia-950/25 p-2 border border-fuchsia-500/20">
+                                <div class="text-[9px] text-fuchsia-300 uppercase tracking-widest mb-1">STT</div>
+                                <div id="sttCounter" class="font-mono font-bold text-fuchsia-100 text-sm leading-tight">S0.0/06H</div>
+                                <div id="sttDelta" class="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">STEADY</div>
+                            </div>
+                            <div class="bg-amber-950/25 p-2 border border-amber-500/20">
+                                <div class="text-[9px] text-amber-300 uppercase tracking-widest mb-1">Deep Shear</div>
+                                <div id="shearCounter" class="font-mono font-bold text-amber-100 text-sm leading-tight">0 kt</div>
+                                <div id="shearMeta" class="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">LIGHT</div>
+                            </div>
+                        </div>
+
                         <div id="warning-panel" class="bg-black/35 border border-white/10 p-2">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-[9px] font-bold text-yellow-300 uppercase tracking-widest">TCV Warnings</span>
@@ -1208,7 +1307,7 @@
             <div class="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                 <div>
                     <h2 class="text-xl font-black text-white italic uppercase tracking-tight">Game Saves</h2>
-                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.5</p>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.6</p>
                 </div>
                 <button id="closeSaveModal" class="text-slate-500 hover:text-white transition-colors text-xl" title="Close Saves">
                     <i class="fa-solid fa-xmark"></i>

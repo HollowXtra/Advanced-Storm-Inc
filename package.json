@@ -20,7 +20,7 @@
   "build": {
     "appId": "com.enceladuscat.storminc",
     "productName": "STORM_INC",
-    "buildVersion": "1.0.3.5",
+    "buildVersion": "1.0.3.6",
     "copyright": "Copyright (c) 2026 EnceladusCat",
     "directories": {
       "output": "dist"

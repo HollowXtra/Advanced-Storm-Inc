@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storm-inc-shell-v17';
+const CACHE_NAME = 'storm-inc-shell-v18';
 const SHELL_ASSETS = [
   './TCM.html',
   './a.png',
@@ -17,6 +17,11 @@ const SHELL_ASSETS = [
   './assets/maps/fictionia2-basin.png',
   './assets/maps/redstone-basin.png',
   './assets/maps/redstone-grid-basin.png',
+  './vendor/tailwindcss.js',
+  './vendor/d3.v7.min.js',
+  './vendor/topojson-client.min.js',
+  './vendor/stats.min.js',
+  './vendor/html2canvas.min.js',
   './js/audio.js',
   './js/city-data.js',
   './js/cyclone-model.js',

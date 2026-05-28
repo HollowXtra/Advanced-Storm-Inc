@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mpChatInput = document.getElementById('mpChatInput');
     const mpSendButton = document.getElementById('mpSendButton');
     const irBwCheckbox = document.getElementById('irBwCheckbox');
+    const satelliteInsetCheckbox = document.getElementById('satelliteInsetCheckbox');
     const basinSelector = document.getElementById('basinSelector');
     const monthSelector = document.getElementById('monthSelector');
     const yearSelector = document.getElementById('yearSelector');
@@ -141,6 +142,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const investChance48Counter = document.getElementById('investChance48Counter');
     const investChance7Counter = document.getElementById('investChance7Counter');
     const investOrgCounter = document.getElementById('investOrgCounter');
+    const investCategoryCounter = document.getElementById('investCategoryCounter');
+    const investOutlookSwatch = document.getElementById('investOutlookSwatch');
+    const investOutlookBar = document.getElementById('investOutlookBar');
+    const investStructureCounter = document.getElementById('investStructureCounter');
+    const investSatelliteCounter = document.getElementById('investSatelliteCounter');
     const mapContainer = d3.select("#map-container");
     const chartContainer = d3.select("#intensity-chart-container");
     const forecastContainer = document.getElementById('intensity-chart-section'); // [新增] 获取容器元素
@@ -171,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedMpName = localStorage.getItem('tcs_mp_name');
     const savedMpHost = localStorage.getItem('tcs_mp_host');
     const savedMpPort = localStorage.getItem('tcs_mp_port');
+    const savedSatelliteInset = localStorage.getItem('tcs_satellite_inset');
     const currentCalendarYear = new Date().getFullYear();
     const SIM_YEAR_MIN = 1851;
     const SIM_YEAR_MAX = 2200;
@@ -233,12 +240,23 @@ document.addEventListener('DOMContentLoaded', () => {
         irBwCheckbox.checked = savedIrBw;
         setSatelliteGrayscale(savedIrBw);
     }
+    if (satelliteInsetCheckbox) {
+        satelliteInsetCheckbox.checked = savedSatelliteInset !== 'false';
+    }
     if (irBwCheckbox) {
         irBwCheckbox.addEventListener('change', (e) => {
             const isEnabled = e.target.checked;
             setSatelliteGrayscale(isEnabled);
             if (typeof playClick === 'function') playClick();
             localStorage.setItem('tcs_ir_bw', isEnabled);
+        });
+    }
+    if (satelliteInsetCheckbox) {
+        satelliteInsetCheckbox.addEventListener('change', (e) => {
+            state.showSatelliteInset = e.target.checked;
+            localStorage.setItem('tcs_satellite_inset', String(state.showSatelliteInset));
+            syncSatelliteInsetVisibility(state.showSatelliteInset && state.cyclone?.status === 'active');
+            if (typeof playClick === 'function') playClick();
         });
     }
     if (historyHeader) {
@@ -366,6 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         customLon: null,
         customLat: null,
         showPathPoints: false,
+        showSatelliteInset: savedSatelliteInset !== 'false',
         showWindField: false,
         showSteeringCurrents: false,
         history: [],
@@ -396,6 +415,32 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let mapSvg, mapProjection;
+
+    function syncSatelliteInsetVisibility(active = state.showSatelliteInset && state.cyclone?.status === 'active') {
+        const satWindow = document.getElementById('satellite-window');
+        const restoreBtn = document.getElementById('restore-sat-btn');
+        if (!satWindow || !restoreBtn) return;
+
+        const shouldShow = !!active;
+        satWindow.classList.toggle('hidden', !shouldShow);
+        restoreBtn.classList.toggle('hidden', shouldShow || !state.cyclone?.status || state.cyclone.status !== 'active');
+        if (satelliteInsetCheckbox) {
+            satelliteInsetCheckbox.checked = !!state.showSatelliteInset;
+        }
+    }
+
+    window.collapseSat = function() {
+        state.showSatelliteInset = false;
+        localStorage.setItem('tcs_satellite_inset', 'false');
+        syncSatelliteInsetVisibility(false);
+    };
+
+    window.expandSat = function() {
+        state.showSatelliteInset = true;
+        localStorage.setItem('tcs_satellite_inset', 'true');
+        syncSatelliteInsetVisibility(state.cyclone?.status === 'active');
+    };
+
     const basinViewCenters = {
         WPAC: { lon: 140, lat: 15 },
         EPAC: { lon: -122, lat: 14 },
@@ -1234,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.10';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.11';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -1303,6 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showPathForecast: !!state.showPathForecast,
                 showWindRadii: !!state.showWindRadii,
                 showPathPoints: !!state.showPathPoints,
+                showSatelliteInset: !!state.showSatelliteInset,
                 showWindField: !!state.showWindField,
                 showSteeringCurrents: !!state.showSteeringCurrents,
                 GlobalTemp: state.GlobalTemp,
@@ -1484,6 +1530,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.showPathForecast = !!saved.showPathForecast;
         state.showWindRadii = !!saved.showWindRadii;
         state.showPathPoints = !!saved.showPathPoints;
+        state.showSatelliteInset = saved.showSatelliteInset !== false;
         state.showWindField = !!saved.showWindField;
         state.showSteeringCurrents = !!saved.showSteeringCurrents;
         state.GlobalTemp = Number(saved.GlobalTemp || state.GlobalTemp || 289);
@@ -1548,7 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupCanvases();
         document.getElementById('initial-message').classList.add('hidden');
         document.getElementById('simulation-output').classList.remove('hidden');
-        document.getElementById('satellite-window').classList.toggle('hidden', !active);
+        syncSatelliteInsetVisibility(active && state.showSatelliteInset);
         document.getElementById('info-panel').classList.remove('hidden');
         document.getElementById('map-info-box').classList.toggle('hidden', !active);
         bestTrackContainer.classList.add('hidden');
@@ -1913,7 +1960,13 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         const chance48 = Math.round(cyclone.formationChance48h || 0);
         const chance7 = Math.round(cyclone.formationChance7d || 0);
         const category = classifyInvestChance(chance7);
+        const category48 = classifyInvestChance(chance48);
         const organization = Math.round((cyclone.investOrganization || 0) * 100);
+        const convection = Math.round((cyclone.investConvectivePulse || 0) * 100);
+        const llc = Math.round((cyclone.investLowLevelCenter || 0) * 100);
+        const disturbanceType = cyclone.investDisturbanceType || (cyclone.isInvest ? 'TROPICAL WAVE' : '--');
+        const llcLabel = cyclone.investLowLevelCenterLabel || 'OPEN WAVE';
+        const convTrend = cyclone.investConvectionTrend || 'PULSING';
 
         if (investIdCounter) {
             investIdCounter.textContent = label;
@@ -1921,7 +1974,7 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         }
         if (investChance48Counter) {
             investChance48Counter.textContent = `${chance48}%`;
-            investChance48Counter.style.color = classifyInvestChance(chance48).color;
+            investChance48Counter.style.color = category48.color;
         }
         if (investChance7Counter) {
             investChance7Counter.textContent = `${chance7}%`;
@@ -1930,6 +1983,26 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         if (investOrgCounter) {
             investOrgCounter.textContent = `${organization}%`;
             investOrgCounter.style.color = cyclone.closedLow ? '#67e8f9' : '#e2e8f0';
+        }
+        if (investCategoryCounter) {
+            investCategoryCounter.textContent = category.label.toUpperCase();
+            investCategoryCounter.style.color = category.color;
+        }
+        if (investOutlookSwatch) {
+            investOutlookSwatch.style.backgroundColor = category.color;
+            investOutlookSwatch.style.boxShadow = `0 0 14px ${category.color}88`;
+        }
+        if (investOutlookBar) {
+            investOutlookBar.style.width = `${Math.max(0, Math.min(100, chance7))}%`;
+            investOutlookBar.style.background = `linear-gradient(90deg, ${category48.color}, ${category.color})`;
+        }
+        if (investStructureCounter) {
+            investStructureCounter.textContent = `${disturbanceType} / ${llcLabel}`;
+            investStructureCounter.title = `${disturbanceType}; low-level center ${llc}%`;
+        }
+        if (investSatelliteCounter) {
+            investSatelliteCounter.textContent = `${convTrend} ${convection}%`;
+            investSatelliteCounter.title = `Convective pulse ${convection}%; outflow ${Math.round((cyclone.investOutflowQuality || 0) * 100)}%`;
         }
     }
 
@@ -1951,7 +2024,9 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         state.lastInvestBannerSignature = signature;
         if (state.cyclone.isInvest) {
             const headlineHTML = `TWO: <span class="text-white text-base align-middle not-italic ml-2 font-bold">${label} MONITORED</span>`;
-            const subText = `${category.label.toUpperCase()} DEVELOPMENT - ${Math.round(state.cyclone.formationChance48h || 0)}% / ${Math.round(state.cyclone.formationChance7d || 0)}%`;
+            const type = state.cyclone.investDisturbanceType || 'DISTURBANCE';
+            const llc = state.cyclone.investLowLevelCenterLabel || 'OPEN WAVE';
+            const subText = `${category.label.toUpperCase()} DEVELOPMENT - ${Math.round(state.cyclone.formationChance48h || 0)}% / ${Math.round(state.cyclone.formationChance7d || 0)}% - ${type} / ${llc}`;
             triggerNewsBanner(headlineHTML, subText, currentHour, state.currentMonth, category.code === 'HIGH' ? 'RED' : 'ORANGE');
             return;
         }
@@ -2657,10 +2732,8 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         setupCanvases();
         document.getElementById('initial-message').classList.add('hidden');
         document.getElementById('simulation-output').classList.remove('hidden');
-        document.getElementById('satellite-window').classList.remove('hidden');
         document.getElementById('info-panel').classList.remove('hidden');
-        const restoreBtn = document.getElementById('restore-sat-btn');
-        if (restoreBtn) restoreBtn.classList.add('hidden');
+        syncSatelliteInsetVisibility(state.showSatelliteInset);
         const newsContainer = document.getElementById('news-feed-container');
         if (newsContainer) {
             newsContainer.innerHTML = ''; // 直接清空所有子元素

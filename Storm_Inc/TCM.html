@@ -7,11 +7,11 @@
     <meta name="keywords" content="Hurricane Simulator, Typhoon Simulator, Tropical Cyclone Simulator, Storm Tracking, Weather Simulation, STROM_INC, 台风模拟器, 气旋模拟, 飓风模拟, 气象游戏">
     <meta name="description" content="Experience realistic storm formation with STROM_INC. An advanced online Hurricane Simulator and Typhoon tracker. Create, track, and analyze tropical cyclones. ">
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://unpkg.com/topojson-client@3"></script>
-    <script src="https://mrdoob.github.io/stats.js/build/stats.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="vendor/tailwindcss.js"></script>
+    <script src="vendor/d3.v7.min.js"></script>
+    <script src="vendor/topojson-client.min.js"></script>
+    <script src="vendor/stats.min.js"></script>
+    <script src="vendor/html2canvas.min.js"></script>
     
     <!-- 引入科技感字体 -->
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
@@ -614,14 +614,14 @@
             <span class="text-slate-600">/</span>
             <span class="text-amber-200">STT Ready</span>
             <span class="text-slate-600">/</span>
-            <span class="text-emerald-200">Alpha 1.0.3.10</span>
+            <span class="text-emerald-200">Alpha 1.0.3.11</span>
         </div>
 
         <section id="introScene" class="absolute inset-0 flex items-center px-5 md:px-14">
             <div class="max-w-3xl">
                 <div class="mb-5 inline-flex items-center gap-3 border border-cyan-300/30 bg-cyan-950/25 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.32em] text-cyan-200">
                     <span class="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.9)]"></span>
-                    Alpha 1.0.3.10 Basin Engine
+                    Alpha 1.0.3.11 Basin Engine
                 </div>
                 <h2 class="font-black italic leading-none tracking-tight text-6xl sm:text-7xl md:text-8xl">
                     STORM<span class="text-cyan-300">_</span>INC
@@ -651,7 +651,7 @@
                         </div>
                         <div class="border border-emerald-300/30 bg-emerald-950/25 px-3 py-2 text-right font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
                             <div>Build</div>
-                            <div class="text-white">1.0.3.10</div>
+                            <div class="text-white">1.0.3.11</div>
                         </div>
                     </div>
                     <div class="mb-4 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
@@ -940,6 +940,11 @@
                             <input type="checkbox" id="irBwCheckbox" class="accent-cyan-500 w-4 h-4 bg-transparent border-slate-600 rounded-none">
                             <span class="text-slate-400 text-[10px] uppercase tracking-widest group-hover:text-cyan-400 transition-colors" data-t="irbw">IR / Enhanced</span>
                         </label>
+
+                        <label class="flex items-center gap-3 cursor-pointer group">
+                            <input type="checkbox" id="satelliteInsetCheckbox" class="accent-cyan-500 w-4 h-4 bg-transparent border-slate-600 rounded-none" checked>
+                            <span class="text-slate-400 text-[10px] uppercase tracking-widest group-hover:text-cyan-400 transition-colors">Satellite Inset</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -1086,22 +1091,43 @@
                             </div>
                         </div>
 
-                        <div id="invest-panel" class="grid grid-cols-4 gap-2 bg-black/25 border border-white/10 p-2">
-                            <div>
-                                <div class="text-[9px] text-violet-300 uppercase tracking-widest mb-1">Invest</div>
-                                <div id="investIdCounter" class="font-mono font-bold text-violet-100 text-sm leading-none">--</div>
+                        <div id="invest-panel" class="bg-black/35 border border-white/10 p-2 space-y-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-[9px] text-violet-300 uppercase tracking-widest mb-1">TWO Invest</div>
+                                    <div id="investIdCounter" class="font-mono font-black text-violet-100 text-sm leading-none truncate">--</div>
+                                </div>
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <span id="investOutlookSwatch" class="inline-block h-4 w-4 border border-white/30 bg-slate-500"></span>
+                                    <span id="investCategoryCounter" class="font-mono text-[10px] font-bold uppercase tracking-widest text-slate-300">NONE</span>
+                                </div>
                             </div>
-                            <div>
-                                <div class="text-[9px] text-amber-300 uppercase tracking-widest mb-1">48H</div>
-                                <div id="investChance48Counter" class="font-mono font-bold text-amber-100 text-sm leading-none">0%</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="bg-white/5 border border-white/5 p-2">
+                                    <div class="text-[9px] text-amber-300 uppercase tracking-widest mb-1">Next 48h</div>
+                                    <div id="investChance48Counter" class="font-mono font-black text-amber-100 text-base leading-none">0%</div>
+                                </div>
+                                <div class="bg-white/5 border border-white/5 p-2">
+                                    <div class="text-[9px] text-orange-300 uppercase tracking-widest mb-1">Next 7d</div>
+                                    <div id="investChance7Counter" class="font-mono font-black text-orange-100 text-base leading-none">0%</div>
+                                </div>
+                                <div class="bg-white/5 border border-white/5 p-2">
+                                    <div class="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Org</div>
+                                    <div id="investOrgCounter" class="font-mono font-black text-white text-base leading-none">0%</div>
+                                </div>
                             </div>
-                            <div>
-                                <div class="text-[9px] text-orange-300 uppercase tracking-widest mb-1">7D</div>
-                                <div id="investChance7Counter" class="font-mono font-bold text-orange-100 text-sm leading-none">0%</div>
+                            <div class="h-1.5 bg-white/10 overflow-hidden">
+                                <div id="investOutlookBar" class="h-full w-0 bg-slate-400 transition-all duration-500"></div>
                             </div>
-                            <div>
-                                <div class="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Org</div>
-                                <div id="investOrgCounter" class="font-mono font-bold text-white text-sm leading-none">0%</div>
+                            <div class="grid grid-cols-2 gap-2 font-mono text-[9px] uppercase tracking-widest">
+                                <div class="bg-white/[0.03] border border-white/5 p-2">
+                                    <div class="text-slate-500">Disturbance</div>
+                                    <div id="investStructureCounter" class="mt-1 text-slate-200 truncate">--</div>
+                                </div>
+                                <div class="bg-white/[0.03] border border-white/5 p-2">
+                                    <div class="text-slate-500">Satellite</div>
+                                    <div id="investSatelliteCounter" class="mt-1 text-cyan-200 truncate">--</div>
+                                </div>
                             </div>
                         </div>
 
@@ -1258,7 +1284,7 @@
                 md:relative md:bg-black/70 md:border md:rounded-2xl md:w-auto md:bottom-auto md:p-2.5
             ">
                 <!-- 启动按钮 -->
-                <button id="generateButton" class="group relative px-6 py-2 bg-slate-100 text-black rounded-xl font-bold text-xs md:text-sm tracking-wide shadow-lg hover:shadow-cyan-500/50 hover:bg-cyan-400 transition-all duration-300 overflow-hidden min-w-[120px]">
+                <button id="generateButton" disabled class="group relative px-6 py-2 bg-slate-100 text-black rounded-xl font-bold text-xs md:text-sm tracking-wide shadow-lg hover:shadow-cyan-500/50 hover:bg-cyan-400 transition-all duration-300 overflow-hidden min-w-[120px] disabled:opacity-60 disabled:cursor-wait">
                     <span class="relative z-10 flex items-center justify-center gap-2" data-t="initialize"><i class="fa-solid fa-power-off"></i> INITIALIZE</span>
                     <div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
                 </button>
@@ -1364,7 +1390,7 @@
             <div class="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                 <div>
                     <h2 class="text-xl font-black text-white italic uppercase tracking-tight">Game Saves</h2>
-                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.10</p>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.11</p>
                 </div>
                 <button id="closeSaveModal" class="text-slate-500 hover:text-white transition-colors text-xl" title="Close Saves">
                     <i class="fa-solid fa-xmark"></i>
@@ -2377,7 +2403,7 @@
             });
         }
     </script>
-    <script type="module" src="js/main.js?v=storm-shapes-v1"></script>
+    <script type="module" src="js/main.js?v=invest-rehaul-v1"></script>
     <script type="module" src="js/satellite-view.js"></script>
 </body>
 </html>

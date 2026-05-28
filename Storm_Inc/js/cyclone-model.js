@@ -754,10 +754,18 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         investOpenedHour: 0,
         investClosedHour: null,
         investOrganization: 0.24 + Math.random() * 0.18,
+        investConvectivePulse: 0.16 + Math.random() * 0.18,
+        investLowLevelCenter: 0.12 + Math.random() * 0.16,
+        investOutflowQuality: 0.2,
+        investDisturbanceType: 'TROPICAL WAVE',
+        investConvectionTrend: 'PULSING',
+        investLowLevelCenterLabel: 'OPEN WAVE',
+        investOutlookArea: null,
         closedLow: false,
         formationChance48h: 10,
         formationChance7d: 20,
         investChanceCategory: 'LOW',
+        investChance48Category: 'LOW',
         modelGuidanceAvailable: true,
         inPAR: false,
         pagasaName: '',
@@ -1634,10 +1642,18 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         isNearLand
     });
     updatedCyclone.investOrganization = investOutlook.organization;
+    updatedCyclone.investConvectivePulse = investOutlook.convectivePulse;
+    updatedCyclone.investLowLevelCenter = investOutlook.lowLevelCenter;
+    updatedCyclone.investOutflowQuality = investOutlook.outflowQuality;
+    updatedCyclone.investDisturbanceType = investOutlook.disturbanceType;
+    updatedCyclone.investConvectionTrend = investOutlook.convectionTrend;
+    updatedCyclone.investLowLevelCenterLabel = investOutlook.lowLevelCenterLabel;
+    updatedCyclone.investOutlookArea = investOutlook.outlookArea;
     updatedCyclone.closedLow = investOutlook.closedLow;
     updatedCyclone.formationChance48h = investOutlook.formationChance48h;
     updatedCyclone.formationChance7d = investOutlook.formationChance7d;
     updatedCyclone.investChanceCategory = investOutlook.chanceCategory.code;
+    updatedCyclone.investChance48Category = investOutlook.chance48Category.code;
     updatedCyclone.modelGuidanceAvailable = investOutlook.modelGuidanceAvailable;
 
     if (updatedCyclone.isInvest && !updatedCyclone.isExtratropical && updatedCyclone.intensity >= 24 && investOutlook.closedLow) {

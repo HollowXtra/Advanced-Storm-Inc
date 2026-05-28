@@ -1262,72 +1262,171 @@ function drawStormGlyph(container, projection, cyclone) {
 
     if (cyclone.isInvest) {
         const organization = Math.max(0, Math.min(1, Number(cyclone.investOrganization || 0.25)));
-        const investRadius = Math.max(9, Math.min(23, radius * (0.72 + organization * 0.28)));
-        const pulse = Math.sin((cyclone.age || 0) * 0.35 + organization * 3) * 0.5 + 0.5;
+        const convection = Math.max(0, Math.min(1, Number(cyclone.investConvectivePulse || organization * 0.75)));
+        const lowLevelCenter = Math.max(0, Math.min(1, Number(cyclone.investLowLevelCenter || organization * 0.65)));
+        const chance48 = Math.round(Number(cyclone.formationChance48h || 0));
+        const chance7 = Math.round(Number(cyclone.formationChance7d || 0));
+        const outlookCategory = chance7 > 60
+            ? { color: "#ef4444", fill: "rgba(239, 68, 68, 0.30)", label: "HIGH" }
+            : chance7 >= 40
+                ? { color: "#fb923c", fill: "rgba(251, 146, 60, 0.28)", label: "MED" }
+                : chance7 > 0
+                    ? { color: "#facc15", fill: "rgba(250, 204, 21, 0.24)", label: "LOW" }
+                    : { color: "#94a3b8", fill: "rgba(148, 163, 184, 0.18)", label: "NONE" };
+        const xCategory = chance48 > 60 ? "#ef4444" : (chance48 >= 40 ? "#fb923c" : (chance48 > 0 ? "#facc15" : "#94a3b8"));
+        const investRadius = Math.max(11, Math.min(26, radius * (0.78 + organization * 0.38)));
+        const pulse = Math.sin((cyclone.age || 0) * 0.32 + organization * 3) * 0.5 + 0.5;
         const investLabel = cyclone.investDisplayId || cyclone.investId || 'INVEST';
+        const outlookArea = cyclone.investOutlookArea || {};
+        const motionDir = Number.isFinite(outlookArea.direction) ? outlookArea.direction : Number(cyclone.direction || 285);
+        const motionAngle = (90 - motionDir) * Math.PI / 180;
+        const forward = { x: Math.cos(motionAngle), y: -Math.sin(motionAngle) };
+        const side = { x: -forward.y, y: forward.x };
+        const areaLength = investRadius * (Number(outlookArea.length || 1.65) + chance7 / 125);
+        const areaWidth = investRadius * Number(outlookArea.width || (0.86 + organization * 0.45));
+        const areaOffset = investRadius * Number(outlookArea.offset || 0.3);
+        const start = {
+            x: forward.x * (-areaLength * 0.42 + areaOffset),
+            y: forward.y * (-areaLength * 0.42 + areaOffset)
+        };
+        const end = {
+            x: forward.x * (areaLength * 0.82 + areaOffset),
+            y: forward.y * (areaLength * 0.82 + areaOffset)
+        };
+        const mid = {
+            x: forward.x * (areaLength * 0.18 + areaOffset),
+            y: forward.y * (areaLength * 0.18 + areaOffset)
+        };
+        const sideStart = areaWidth * 0.58;
+        const sideMid = areaWidth * (0.82 + convection * 0.22);
+        const sideEnd = areaWidth * 0.45;
+        const outlookPath = [
+            `M ${start.x + side.x * sideStart} ${start.y + side.y * sideStart}`,
+            `C ${mid.x + side.x * sideMid} ${mid.y + side.y * sideMid} ${end.x + side.x * sideEnd} ${end.y + side.y * sideEnd} ${end.x} ${end.y}`,
+            `C ${end.x - side.x * sideEnd} ${end.y - side.y * sideEnd} ${mid.x - side.x * sideMid} ${mid.y - side.y * sideMid} ${start.x - side.x * sideStart} ${start.y - side.y * sideStart}`,
+            `C ${start.x - side.x * sideStart * 0.65} ${start.y - side.y * sideStart * 0.65} ${start.x + side.x * sideStart * 0.65} ${start.y + side.y * sideStart * 0.65} ${start.x + side.x * sideStart} ${start.y + side.y * sideStart}`,
+            'Z'
+        ].join(' ');
 
-        glyph.append("circle")
-            .attr("r", investRadius + pulse * 1.8)
-            .attr("fill", "rgba(168, 85, 247, 0.10)")
-            .attr("stroke", "#c084fc")
-            .attr("stroke-width", 1.5)
-            .attr("stroke-dasharray", "4 3")
-            .attr("stroke-opacity", 0.72)
+        glyph.append("path")
+            .attr("class", "invest-outlook-area")
+            .attr("d", outlookPath)
+            .attr("fill", outlookCategory.fill)
+            .attr("stroke", outlookCategory.color)
+            .attr("stroke-width", 1.4)
+            .attr("stroke-dasharray", chance7 > 0 ? "7 4" : "3 4")
+            .attr("stroke-opacity", chance7 > 0 ? 0.82 : 0.45)
             .attr("vector-effect", "non-scaling-stroke")
-            .style("filter", "drop-shadow(0 0 6px rgba(192,132,252,0.45))");
+            .style("filter", `drop-shadow(0 0 8px ${outlookCategory.color}55)`);
 
         glyph.append("circle")
-            .attr("r", Math.max(3.8, investRadius * (0.24 + organization * 0.18)))
-            .attr("fill", "none")
-            .attr("stroke", "#67e8f9")
-            .attr("stroke-width", 1.2)
-            .attr("stroke-opacity", 0.78)
+            .attr("r", investRadius + pulse * 2.2)
+            .attr("fill", "rgba(15, 23, 42, 0.18)")
+            .attr("stroke", outlookCategory.color)
+            .attr("stroke-width", 1.15)
+            .attr("stroke-dasharray", "2 4")
+            .attr("stroke-opacity", 0.5)
             .attr("vector-effect", "non-scaling-stroke");
 
-        for (let i = 0; i < 5; i++) {
-            const angle = phase + i * (Math.PI * 2 / 5);
-            const convectiveRadius = investRadius * (0.45 + ((i % 2) * 0.18)) * (0.75 + organization * 0.35);
-            glyph.append("circle")
-                .attr("cx", Math.cos(angle) * convectiveRadius)
-                .attr("cy", Math.sin(angle) * convectiveRadius)
-                .attr("r", 1.9 + organization * 2.2 + (i % 2) * 0.8)
-                .attr("fill", i % 2 === 0 ? "#e0f2fe" : "#c084fc")
-                .attr("fill-opacity", 0.34 + organization * 0.36);
+        const burstCount = Math.max(4, Math.round(4 + convection * 5 + organization * 3));
+        for (let i = 0; i < burstCount; i++) {
+            const angle = phase + i * (Math.PI * 2 / burstCount) + Math.sin(i + phase) * 0.28;
+            const convectiveRadius = investRadius * (0.28 + ((i % 3) * 0.16)) * (0.9 + organization * 0.35);
+            const downshearBias = i % 2 === 0 ? areaWidth * 0.12 : 0;
+            glyph.append("ellipse")
+                .attr("cx", Math.cos(angle) * convectiveRadius + forward.x * downshearBias)
+                .attr("cy", Math.sin(angle) * convectiveRadius + forward.y * downshearBias)
+                .attr("rx", 2.1 + convection * 3.3 + (i % 2) * 1.1)
+                .attr("ry", 1.4 + convection * 2.2)
+                .attr("transform", `rotate(${angle * 180 / Math.PI + 18})`)
+                .attr("fill", i % 3 === 0 ? "#f8fafc" : (i % 3 === 1 ? "#38bdf8" : "#22c55e"))
+                .attr("stroke", i % 3 === 2 && convection > 0.58 ? "#facc15" : "none")
+                .attr("stroke-width", 0.55)
+                .attr("fill-opacity", 0.25 + convection * 0.5);
         }
 
         glyph.append("line")
-            .attr("x1", -investRadius * 0.78)
-            .attr("y1", -investRadius * 0.78)
-            .attr("x2", investRadius * 0.78)
-            .attr("y2", investRadius * 0.78)
-            .attr("stroke", "#f8fafc")
-            .attr("stroke-width", 1.1)
-            .attr("stroke-opacity", 0.62)
+            .attr("x1", -investRadius * 0.54)
+            .attr("y1", -investRadius * 0.54)
+            .attr("x2", investRadius * 0.54)
+            .attr("y2", investRadius * 0.54)
+            .attr("stroke", "#020617")
+            .attr("stroke-width", 6.2)
+            .attr("stroke-linecap", "round")
+            .attr("stroke-opacity", 0.85)
             .attr("vector-effect", "non-scaling-stroke");
 
         glyph.append("line")
-            .attr("x1", -investRadius * 0.78)
-            .attr("y1", investRadius * 0.78)
-            .attr("x2", investRadius * 0.78)
-            .attr("y2", -investRadius * 0.78)
-            .attr("stroke", "#f8fafc")
-            .attr("stroke-width", 1.1)
-            .attr("stroke-opacity", 0.62)
+            .attr("x1", -investRadius * 0.54)
+            .attr("y1", investRadius * 0.54)
+            .attr("x2", investRadius * 0.54)
+            .attr("y2", -investRadius * 0.54)
+            .attr("stroke", "#020617")
+            .attr("stroke-width", 6.2)
+            .attr("stroke-linecap", "round")
+            .attr("stroke-opacity", 0.85)
             .attr("vector-effect", "non-scaling-stroke");
+
+        [-1, 1].forEach(slope => {
+            glyph.append("line")
+                .attr("x1", -investRadius * 0.5)
+                .attr("y1", slope * investRadius * 0.5)
+                .attr("x2", investRadius * 0.5)
+                .attr("y2", -slope * investRadius * 0.5)
+                .attr("stroke", xCategory)
+                .attr("stroke-width", 3.4)
+                .attr("stroke-linecap", "round")
+                .attr("vector-effect", "non-scaling-stroke")
+                .style("filter", `drop-shadow(0 0 5px ${xCategory}aa)`);
+        });
 
         glyph.append("circle")
             .attr("class", "storm-center-dot")
-            .attr("r", 2.8)
-            .attr("fill", "#c084fc")
-            .attr("stroke", "#ffffff")
+            .attr("r", 2.2 + lowLevelCenter * 1.2)
+            .attr("fill", lowLevelCenter > 0.5 ? "#67e8f9" : "#020617")
+            .attr("stroke", lowLevelCenter > 0.5 ? "#ffffff" : "#bae6fd")
             .attr("stroke-width", 0.9)
             .attr("vector-effect", "non-scaling-stroke");
 
+        const plaqueX = investRadius * 1.24;
+        const plaqueY = -investRadius * 1.48;
+        const plaque = glyph.append("g")
+            .attr("class", "invest-probability-tag")
+            .attr("transform", `translate(${plaqueX},${plaqueY})`);
+        plaque.append("rect")
+            .attr("x", -2)
+            .attr("y", -12)
+            .attr("width", 56)
+            .attr("height", 29)
+            .attr("rx", 2)
+            .attr("fill", "#020617")
+            .attr("fill-opacity", 0.88)
+            .attr("stroke", outlookCategory.color)
+            .attr("stroke-opacity", 0.72)
+            .attr("stroke-width", 0.8)
+            .attr("vector-effect", "non-scaling-stroke");
+        plaque.append("text")
+            .attr("x", 6)
+            .attr("y", -2)
+            .attr("fill", "#cbd5e1")
+            .attr("font-size", "5.8px")
+            .attr("font-weight", 900)
+            .attr("font-family", "monospace")
+            .text("2D  7D");
+        plaque.append("text")
+            .attr("x", 6)
+            .attr("y", 11)
+            .attr("fill", "#f8fafc")
+            .attr("font-size", "9.5px")
+            .attr("font-weight", 900)
+            .attr("font-family", "monospace")
+            .text(`${chance48}% ${chance7}%`);
+
         glyph.append("text")
             .attr("x", 0)
-            .attr("y", investRadius + 11)
+            .attr("y", investRadius + 12)
             .attr("text-anchor", "middle")
-            .attr("fill", "#f5d0fe")
+            .attr("fill", outlookCategory.color)
             .attr("font-size", "9px")
             .attr("font-weight", 800)
             .attr("font-family", "monospace")
@@ -1335,6 +1434,19 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("stroke", "#020617")
             .attr("stroke-width", 3)
             .text(investLabel);
+
+        glyph.append("text")
+            .attr("x", 0)
+            .attr("y", investRadius + 21)
+            .attr("text-anchor", "middle")
+            .attr("fill", "#e2e8f0")
+            .attr("font-size", "6.5px")
+            .attr("font-weight", 800)
+            .attr("font-family", "monospace")
+            .attr("paint-order", "stroke")
+            .attr("stroke", "#020617")
+            .attr("stroke-width", 2)
+            .text(outlookCategory.label);
 
         return;
     }

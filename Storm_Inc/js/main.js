@@ -145,6 +145,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const eyeMaturityCounter = document.getElementById('eyeMaturityCounter');
     const bandingStatusCounter = document.getElementById('bandingStatusCounter');
     const bandingMaturityCounter = document.getElementById('bandingMaturityCounter');
+    const eyewallSpinCounter = document.getElementById('eyewallSpinCounter');
+    const eyewallPeriodCounter = document.getElementById('eyewallPeriodCounter');
+    const mesovortexCounter = document.getElementById('mesovortexCounter');
+    const coreStageCounter = document.getElementById('coreStageCounter');
+    const hotTowerCounter = document.getElementById('hotTowerCounter');
+    const moatCounter = document.getElementById('moatCounter');
     const warningList = document.getElementById('warning-list');
     const warningCycle = document.getElementById('warning-cycle');
     const investIdCounter = document.getElementById('investIdCounter');
@@ -1348,7 +1354,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.13';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.14';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -2040,6 +2046,39 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
         }
         if (bandingMaturityCounter) {
             bandingMaturityCounter.textContent = `${bandingMaturity}% CURVE`;
+        }
+        const spinRate = Math.round(Number(structure.eyewallSpinRateDegHr || 0));
+        const spinPeriod = Number(structure.eyewallRotationPeriodMin || 0);
+        const mesoCount = Math.round(Number(structure.mesovortexCount || 0));
+        const polygonal = Math.round(Number(structure.polygonalEyeScore || 0) * 100);
+        const hotTowerCount = Math.round(Number(structure.hotTowerCount || 0));
+        const moatScore = Math.round(Number(structure.moatScore || 0) * 100);
+        if (eyewallSpinCounter) {
+            eyewallSpinCounter.textContent = spinRate > 0 ? `${spinRate} deg/h` : '--';
+            eyewallSpinCounter.className = `font-mono font-bold text-sm leading-tight ${
+                spinRate >= 320 ? 'text-cyan-100' : (spinRate >= 120 ? 'text-sky-200' : 'text-slate-300')
+            }`;
+        }
+        if (eyewallPeriodCounter) {
+            eyewallPeriodCounter.textContent = spinPeriod > 0 ? `${Math.round(spinPeriod)} MIN LAP` : '--';
+        }
+        if (mesovortexCounter) {
+            mesovortexCounter.textContent = mesoCount > 0 ? `${mesoCount} VORT` : '0 VORT';
+            mesovortexCounter.className = `font-mono font-bold text-sm leading-tight ${
+                mesoCount >= 5 ? 'text-rose-100' : (mesoCount > 0 ? 'text-pink-200' : 'text-slate-300')
+            }`;
+        }
+        if (coreStageCounter) {
+            coreStageCounter.textContent = mesoCount > 0 ? `${polygonal}% POLY` : (structure.coreStageStatus || 'CORE BUILDING');
+        }
+        if (hotTowerCounter) {
+            hotTowerCounter.textContent = hotTowerCount > 0 ? `${hotTowerCount} HOT` : '0 HOT';
+            hotTowerCounter.className = `font-mono font-bold text-sm leading-tight ${
+                hotTowerCount >= 5 ? 'text-orange-100' : (hotTowerCount > 0 ? 'text-amber-200' : 'text-slate-300')
+            }`;
+        }
+        if (moatCounter) {
+            moatCounter.textContent = `${moatScore}% MOAT`;
         }
         updateInvestPanel();
     }
@@ -3750,6 +3789,10 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         { key: 'RGB', label: 'RGB Composite', signal: 'Day/night cloud phase and structure split.' },
         { key: 'MW37', label: '37GHz Microwave', signal: 'Low-level rainband and eyewall arcs.' },
         { key: 'MW89', label: '89GHz Microwave', signal: 'Deep convective ring and hot towers.' },
+        { key: 'SSMIS', label: 'SSMIS Pass', signal: 'Polar microwave eye, moat, and inner-core fixes.' },
+        { key: 'GPM', label: 'GPM Rain', signal: 'Eyewall rain rates and hot tower bursts.' },
+        { key: 'GLM', label: 'GLM Lightning', signal: 'Overshooting tops and explosive convection bursts.' },
+        { key: 'AMV', label: 'AMV Winds', signal: 'Cloud-tracked outflow and steering-level wind.' },
         { key: 'SCAT', label: 'Scatterometer', signal: 'Surface wind field and closed circulation.' },
         { key: 'SAR', label: 'SAR TC Winds', signal: 'High-resolution ocean surface wind streaks.' },
         { key: 'ADT', label: 'ADT', signal: 'Objective IR intensity estimate.' },
@@ -3788,7 +3831,12 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         const burst = Math.round(Number(structure.convectiveBurstiness || 0) * 100);
         const mw = Math.round(Number(structure.microwaveRingScore || 0) * 100);
         const outflow = Math.round(Number(structure.outflowChannels || 0) * 100);
-        const confidence = Math.max(18, Math.min(96, Math.round((banding + eye + mw + Math.max(cold, burst) + outflow) / 5)));
+        const spin = Math.round(Number(structure.eyewallSpinRateDegHr || 0));
+        const meso = Math.round(Number(structure.mesovortexCount || 0));
+        const towers = Math.round(Number(structure.hotTowerCount || 0));
+        const moat = Math.round(Number(structure.moatScore || 0) * 100);
+        const integrity = Math.round(Number(structure.eyewallIntegrity || 0) * 100);
+        const confidence = Math.max(18, Math.min(98, Math.round((banding + eye + mw + Math.max(cold, burst) + outflow + integrity) / 6)));
         const scene = String(structure.satelliteScene || structure.shapeFamily || 'open-wave').replace(/-/g, ' ').toUpperCase();
         const rows = SATELLITE_PRODUCT_CATALOG.map(product => {
             let value = '--';
@@ -3799,6 +3847,10 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             if (product.key === 'RGB') value = `BANDING ${banding}%`;
             if (product.key === 'MW37') value = `LOW RING ${Math.max(banding, mw)}%`;
             if (product.key === 'MW89') value = `DEEP RING ${mw}%`;
+            if (product.key === 'SSMIS') value = moat > 0 ? `MOAT ${moat}%` : `CORE ${integrity}%`;
+            if (product.key === 'GPM') value = `${Math.round(Number(cyclone?.rainRateMmHr || 0))} mm/h + ${towers} HOT`;
+            if (product.key === 'GLM') value = towers >= 4 ? `ACTIVE ${towers}` : `SPARSE ${towers}`;
+            if (product.key === 'AMV') value = `${outflow}% OUTFLOW`;
             if (product.key === 'SCAT') value = intensity >= 34 ? `CLOSED ${Math.max(35, banding)}%` : `OPEN ${100 - banding}%`;
             if (product.key === 'SAR') value = `${Math.round(intensity)} kt VMAX`;
             if (product.key === 'ADT') value = `${Math.round(intensity + (eye - 45) * 0.04)} kt`;
@@ -3807,7 +3859,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             if (product.key === 'eTRaP') value = `${Math.round(Number(cyclone?.rainRateMmHr || 0))} mm/h`;
             return { ...product, value };
         });
-        return { scene, confidence, targetHour, rows, summary: `${scene} / eye ${eye}% / banding ${banding}% / microwave ${mw}% / burst ${burst}%` };
+        return { scene, confidence, targetHour, rows, summary: `${scene} / eye ${eye}% / ${spin}deg/h spin / ${meso} meso / ${towers} hot towers / microwave ${mw}%` };
     }
 
     function buildReconReanalysis(cyclone, trackPoint, targetHour) {

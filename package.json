@@ -1,6 +1,6 @@
 {
   "name": "advanced-storm-inc",
-  "version": "1.0.3-alpha.13",
+  "version": "1.0.3-alpha.14",
   "description": "Cross-platform desktop and web build of the STORM_INC tropical cyclone simulator.",
   "main": "electron/main.cjs",
   "author": "EnceladusCat",
@@ -20,7 +20,7 @@
   "build": {
     "appId": "com.enceladuscat.storminc",
     "productName": "STORM_INC",
-    "buildVersion": "1.0.3.13",
+    "buildVersion": "1.0.3.14",
     "copyright": "Copyright (c) 2026 EnceladusCat",
     "directories": {
       "output": "dist"

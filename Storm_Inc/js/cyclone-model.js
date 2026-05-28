@@ -132,6 +132,7 @@ function getGenesisProtectionHours(cycloneOrBasin) {
 function calculateStormStructure(cyclone, totalShear = 0) {
     const intensity = Number(cyclone.intensity || 0);
     const isMedicane = isMedicaneBasin(cyclone);
+    const hemi = Number(cyclone.lat || 0) >= 0 ? 1 : -1;
     const size = clamp(Number(cyclone.circulationSize || 300), 100, 800);
     const rmwKm = isMedicane
         ? clamp(5 + size * 0.09 - Math.max(0, intensity - 45) * 0.08, 8, 48)
@@ -309,6 +310,56 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         1
     );
     const outflowChannels = clamp((humidity - 60) / 28, 0, 1) * clamp((24 - totalShear) / 24, 0, 1);
+    const eyewallSpinRateDegHr = intensity >= 34
+        ? clamp(((Math.max(18, intensity) * 0.514444) / (Math.max(8, rmwKm) * 1000)) * (180 / Math.PI) * 3600, 18, 620)
+        : 0;
+    const eyewallRotationPeriodMin = eyewallSpinRateDegHr > 0 ? clamp((360 / eyewallSpinRateDegHr) * 60, 34, 999) : 0;
+    const eyewallWobbleKm = clamp(
+        eyeMaturity * 4
+        + eyeClosing * 11
+        + (dualWindMaxima ? 8 : 0)
+        + convectiveBurstiness * 5
+        + Math.abs(Math.sin((cyclone.age || 0) * 0.19 + shapeSeed * 6.28)) * (1.5 + shearShape * 4),
+        0,
+        28
+    );
+    const mesovortexPotential = clamp(
+        eyeMaturity * 0.34
+        + microwaveRingScore * 0.34
+        + clamp((intensity - 82) / 50, 0, 0.28)
+        + clamp((18 - totalShear) / 18, 0, 0.18)
+        - eyeClosing * 0.24
+        - (ercActive ? 0.18 : 0),
+        0,
+        1
+    );
+    const mesovortexCount = mesovortexPotential > 0.48 && intensity >= 83
+        ? Math.max(3, Math.min(7, Math.round(3 + mesovortexPotential * 4 + shapeSeed * 1.6)))
+        : 0;
+    const polygonalEyeScore = mesovortexCount
+        ? clamp(mesovortexPotential * 0.52 + coreRoundness * 0.24 + (1 - bandFragmentation) * 0.24, 0, 1)
+        : 0;
+    const hotTowerPotential = clamp(
+        convectiveBurstiness * 0.45
+        + clamp(rapidDeepening6h / 20, 0, 0.24)
+        + clamp((ohc - 55) / 75, 0, 0.16)
+        + clamp((humidity - 68) / 24, 0, 0.15)
+        - shearShape * 0.12,
+        0,
+        1
+    );
+    const hotTowerCount = Math.round(hotTowerPotential * 8);
+    const moatScore = clamp((ercActive ? 0.42 + ercProgress * 0.42 : 0) + (shapeFamily === 'annular' ? 0.4 : 0) + clamp((eyeMaturity - 0.62) / 0.36, 0, 0.22), 0, 1);
+    const eyewallIntegrity = clamp(eyeMaturity * 0.38 + microwaveRingScore * 0.34 + coreRoundness * 0.22 - bandFragmentation * 0.18 - eyeClosing * 0.34, 0, 1);
+    const vorticityWaveNumber = mesovortexCount || (intensity >= 64 ? (shapeSeed > 0.5 ? 2 : 1) : 0);
+    const inflowBandCount = clamp(Math.round(2 + bandingMaturity * 4 + (shapeFamily === 'monsoon' ? 2 : 0) - bandFragmentation * 1.5), 1, 7);
+    const convectiveBurstSectorDeg = ((shapeSeed * 360) + (cyclone.age || 0) * 7 + (hemi < 0 ? 180 : 0)) % 360;
+    const coreStageStatus = dualWindMaxima
+        ? 'CONCENTRIC EYEWALLS'
+        : (polygonalEyeScore > 0.55 ? 'MESOVORTEX EYE'
+            : (hotTowerCount >= 5 ? 'HOT TOWER BURSTS'
+                : (moatScore > 0.55 ? 'MOAT RING'
+                    : (eyewallIntegrity > 0.68 ? 'CORE LOCKED' : 'CORE BUILDING'))));
 
     if (shapeFamily === 'classic') {
         if (convectiveBurstiness > 0.58 && bandingMaturity < 0.45) {
@@ -321,12 +372,31 @@ function calculateStormStructure(cyclone, totalShear = 0) {
             shapeFamily = 'curved-band';
         }
     }
+    if (intensity < 50 && (shearShape > 0.62 || moistureShape > 0.55) && bandingMaturity < 0.3) {
+        shapeFamily = 'exposed-llc';
+    } else if (dualWindMaxima && intensity >= 74) {
+        shapeFamily = 'concentric-eyewall';
+    } else if (pinholeScore > 0.62 && eyeOpenFraction > 0.48 && intensity >= 96) {
+        shapeFamily = 'pinhole-eye';
+    } else if (polygonalEyeScore > 0.58 && eyeOpenFraction > 0.42) {
+        shapeFamily = 'polygonal-eye';
+    } else if (hotTowerCount >= 5 && intensity >= 50 && eyeMaturity < 0.7) {
+        shapeFamily = 'hot-tower';
+    } else if (moatScore > 0.62 && intensity >= 96 && shapeFamily === 'classic') {
+        shapeFamily = 'moat-ring';
+    }
 
     const armCount = shapeFamily === 'monsoon' ? (bandingMaturity > 0.58 ? 5 : 4)
         : shapeFamily === 'open-wave' ? 2
+        : shapeFamily === 'exposed-llc' ? 2
         : shapeFamily === 'comma' ? 2
         : shapeFamily === 'cdo' ? 2
         : shapeFamily === 'embedded-eye' ? 3
+        : shapeFamily === 'pinhole-eye' ? 4
+        : shapeFamily === 'polygonal-eye' ? 4
+        : shapeFamily === 'concentric-eyewall' ? 4
+        : shapeFamily === 'hot-tower' ? 3
+        : shapeFamily === 'moat-ring' ? 3
         : shapeFamily === 'curved-band' ? 3
         : shapeFamily === 'bursting' ? 2
         : intensity >= 96 && bandingMaturity > 0.66 ? 4
@@ -369,6 +439,19 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         convectiveBurstiness,
         microwaveRingScore,
         outflowChannels,
+        eyewallSpinRateDegHr,
+        eyewallRotationPeriodMin,
+        eyewallWobbleKm,
+        mesovortexCount,
+        polygonalEyeScore,
+        hotTowerCount,
+        hotTowerPotential,
+        moatScore,
+        eyewallIntegrity,
+        vorticityWaveNumber,
+        inflowBandCount,
+        convectiveBurstSectorDeg,
+        coreStageStatus,
         tropicalStormHours,
         hurricaneHours,
         cat2Hours,
@@ -919,6 +1002,19 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
             convectiveBurstiness: 0,
             microwaveRingScore: 0,
             outflowChannels: 0,
+            eyewallSpinRateDegHr: 0,
+            eyewallRotationPeriodMin: 0,
+            eyewallWobbleKm: 0,
+            mesovortexCount: 0,
+            polygonalEyeScore: 0,
+            hotTowerCount: 0,
+            hotTowerPotential: 0,
+            moatScore: 0,
+            eyewallIntegrity: 0,
+            vorticityWaveNumber: 0,
+            inflowBandCount: 2,
+            convectiveBurstSectorDeg: 0,
+            coreStageStatus: 'CORE BUILDING',
             tropicalStormHours: 0,
             hurricaneHours: 0,
             cat2Hours: 0,

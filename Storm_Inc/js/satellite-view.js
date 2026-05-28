@@ -367,6 +367,12 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     const convectiveBurstiness = Math.max(0, Math.min(1, Number(structure?.convectiveBurstiness || 0)));
     const microwaveRingScore = Math.max(0, Math.min(1, Number(structure?.microwaveRingScore || 0)));
     const bandFragmentation = Math.max(0, Math.min(1, Number(structure?.bandFragmentation || 0)));
+    const eyewallSpinRate = Math.max(0, Math.min(700, Number(structure?.eyewallSpinRateDegHr || 0)));
+    const mesovortexCount = Math.max(0, Math.min(8, Number(structure?.mesovortexCount || 0)));
+    const polygonalEyeScore = Math.max(0, Math.min(1, Number(structure?.polygonalEyeScore || 0)));
+    const hotTowerPotential = Math.max(0, Math.min(1, Number(structure?.hotTowerPotential || 0)));
+    const moatScore = Math.max(0, Math.min(1, Number(structure?.moatScore || 0)));
+    const eyewallIntegrity = Math.max(0, Math.min(1, Number(structure?.eyewallIntegrity || eyeMaturity)));
     const shapeFamily = structure?.shapeFamily || 'classic';
     target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
 
@@ -422,6 +428,39 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.stormRadius += 0.05;
         target.distortion *= 0.62;
         target.centralMass += 0.08;
+    } else if (shapeFamily === 'pinhole-eye') {
+        target.spiral += 0.38;
+        target.eye = Math.max(0.004, target.eye * 0.38);
+        target.distortion *= 0.48;
+        target.centralMass += 0.06;
+    } else if (shapeFamily === 'polygonal-eye') {
+        target.spiral += 0.16 + eyewallSpinRate / 2400;
+        target.distortion += 0.08 + polygonalEyeScore * 0.15;
+        target.centralMass += 0.04;
+        target.asymStrength += mesovortexCount * 0.035;
+    } else if (shapeFamily === 'concentric-eyewall') {
+        target.outerEyewallRadius = Math.max(target.outerEyewallRadius, 0.17 + moatScore * 0.12);
+        target.outerEyewallStrength = Math.max(target.outerEyewallStrength, 0.56 + moatScore * 0.32);
+        target.centralMass += 0.16;
+        target.distortion += 0.08;
+        target.stormRadius += 0.08;
+    } else if (shapeFamily === 'hot-tower') {
+        target.spiral += 0.18;
+        target.centralMass += 0.12 + hotTowerPotential * 0.12;
+        target.distortion += 0.14 + hotTowerPotential * 0.16;
+        target.asymStrength += 0.16 + hotTowerPotential * 0.24;
+    } else if (shapeFamily === 'moat-ring') {
+        target.spiral *= 0.72;
+        target.outerEyewallRadius = Math.max(target.outerEyewallRadius, 0.2 + moatScore * 0.1);
+        target.outerEyewallStrength = Math.max(target.outerEyewallStrength, 0.38 + moatScore * 0.3);
+        target.distortion *= 0.62;
+        target.centralMass += 0.12;
+    } else if (shapeFamily === 'exposed-llc') {
+        target.spiral *= 0.58;
+        target.eye = -0.18;
+        target.centralMass -= 0.12;
+        target.asymStrength += 0.62;
+        target.distortion += 0.24;
     } else if (shapeFamily === 'compact') {
         target.spiral += 0.22;
         target.stormRadius -= 0.04;
@@ -444,6 +483,11 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.centralMass -= 0.06;
         target.asymStrength += 0.36;
         target.distortion += 0.18;
+    }
+
+    if (eyewallIntegrity > 0.55 && intensityKnots >= 64) {
+        target.spiral += eyewallSpinRate / 3600;
+        target.distortion += (1 - eyewallIntegrity) * 0.08;
     }
 
     // ============================================================

@@ -630,14 +630,14 @@
             <span class="text-slate-600">/</span>
             <span class="text-amber-200">STT Ready</span>
             <span class="text-slate-600">/</span>
-            <span class="text-emerald-200">Alpha 1.0.3.13</span>
+            <span class="text-emerald-200">Alpha 1.0.3.14</span>
         </div>
 
         <section id="introScene" class="absolute inset-0 flex items-center px-5 md:px-14">
             <div class="max-w-3xl">
                 <div class="mb-5 inline-flex items-center gap-3 border border-cyan-300/30 bg-cyan-950/25 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.32em] text-cyan-200">
                     <span class="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.9)]"></span>
-                    Alpha 1.0.3.13 Basin Engine
+                    Alpha 1.0.3.14 Basin Engine
                 </div>
                 <h2 class="font-black italic leading-none tracking-tight text-6xl sm:text-7xl md:text-8xl">
                     STORM<span class="text-cyan-300">_</span>INC
@@ -667,7 +667,7 @@
                         </div>
                         <div class="border border-emerald-300/30 bg-emerald-950/25 px-3 py-2 text-right font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
                             <div>Build</div>
-                            <div class="text-white">1.0.3.13</div>
+                            <div class="text-white">1.0.3.14</div>
                         </div>
                     </div>
                     <div class="mb-4 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
@@ -1231,6 +1231,24 @@
                             </div>
                         </div>
 
+                        <div id="eyewall-dynamics-panel" class="grid grid-cols-3 gap-2">
+                            <div class="bg-cyan-950/25 p-2 border border-cyan-500/20">
+                                <div class="text-[9px] text-cyan-300 uppercase tracking-widest mb-1">Spin</div>
+                                <div id="eyewallSpinCounter" class="font-mono font-bold text-cyan-100 text-sm leading-tight">--</div>
+                                <div id="eyewallPeriodCounter" class="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">--</div>
+                            </div>
+                            <div class="bg-rose-950/25 p-2 border border-rose-500/20">
+                                <div class="text-[9px] text-rose-300 uppercase tracking-widest mb-1">Meso</div>
+                                <div id="mesovortexCounter" class="font-mono font-bold text-rose-100 text-sm leading-tight">0 VORT</div>
+                                <div id="coreStageCounter" class="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500 truncate">CORE BUILDING</div>
+                            </div>
+                            <div class="bg-orange-950/25 p-2 border border-orange-500/20">
+                                <div class="text-[9px] text-orange-300 uppercase tracking-widest mb-1">Towers</div>
+                                <div id="hotTowerCounter" class="font-mono font-bold text-orange-100 text-sm leading-tight">0 HOT</div>
+                                <div id="moatCounter" class="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">0% MOAT</div>
+                            </div>
+                        </div>
+
                         <div id="warning-panel" class="bg-black/35 border border-white/10 p-2">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-[9px] font-bold text-yellow-300 uppercase tracking-widest">TCV Warnings</span>
@@ -1436,7 +1454,7 @@
             <div class="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                 <div>
                     <h2 class="text-xl font-black text-white italic uppercase tracking-tight">Game Saves</h2>
-                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.13</p>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.14</p>
                 </div>
                 <button id="closeSaveModal" class="text-slate-500 hover:text-white transition-colors text-xl" title="Close Saves">
                     <i class="fa-solid fa-xmark"></i>
@@ -2566,7 +2584,7 @@
             });
         }
     </script>
-    <script type="module" src="js/main.js?v=analysis-recon-v1"></script>
+    <script type="module" src="js/main.js?v=eyewall-dynamics-v1"></script>
     <script type="module" src="js/satellite-view.js"></script>
 </body>
 </html>

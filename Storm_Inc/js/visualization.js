@@ -1467,7 +1467,17 @@ function drawStormGlyph(container, projection, cyclone) {
     const fragmentation = Math.max(0, Math.min(1, finiteOr(structure.bandFragmentation, 0)));
     const coreRoundness = Math.max(0.25, Math.min(1.2, finiteOr(structure.coreRoundness, 0.75)));
     const asymmetry = Math.max(0, Math.min(1.8, finiteOr(structure.asymmetry, 0)));
-    const configuredArms = Math.max(2, Math.min(6, Math.round(finiteOr(structure.armCount, armCount))));
+    const eyewallSpinRate = Math.max(0, Math.min(700, finiteOr(structure.eyewallSpinRateDegHr, 0)));
+    const eyewallWobbleKm = Math.max(0, Math.min(35, finiteOr(structure.eyewallWobbleKm, 0)));
+    const mesovortexCount = Math.max(0, Math.min(8, Math.round(finiteOr(structure.mesovortexCount, 0))));
+    const polygonalEyeScore = Math.max(0, Math.min(1, finiteOr(structure.polygonalEyeScore, 0)));
+    const hotTowerCount = Math.max(0, Math.min(9, Math.round(finiteOr(structure.hotTowerCount, 0))));
+    const hotTowerPotential = Math.max(0, Math.min(1, finiteOr(structure.hotTowerPotential, 0)));
+    const moatScore = Math.max(0, Math.min(1, finiteOr(structure.moatScore, 0)));
+    const eyewallIntegrity = Math.max(0, Math.min(1, finiteOr(structure.eyewallIntegrity, eyeMaturity)));
+    const inflowBandCount = Math.max(1, Math.min(7, Math.round(finiteOr(structure.inflowBandCount, armCount))));
+    const burstSector = finiteOr(structure.convectiveBurstSectorDeg, 0) * Math.PI / 180;
+    const configuredArms = Math.max(2, Math.min(7, Math.round(Math.max(finiteOr(structure.armCount, armCount), inflowBandCount))));
     const shapeConfigs = {
         classic: { turn: 4.8, reach: 0.95, wobble: 1.0, width: 1.0, cdo: 1.0, stretch: 1.0, lobeCount: 3 },
         compact: { turn: 5.8, reach: 0.78, wobble: 0.65, width: 1.16, cdo: 0.78, stretch: 0.9, lobeCount: 2 },
@@ -1481,6 +1491,12 @@ function drawStormGlyph(container, projection, cyclone) {
         cdo: { turn: 3.9, reach: 0.72, wobble: 0.62, width: 1.04, cdo: 1.34, stretch: 1.08, lobeCount: 2 },
         'embedded-eye': { turn: 4.7, reach: 0.9, wobble: 0.74, width: 1.08, cdo: 1.18, stretch: 1.0, lobeCount: 2 },
         bursting: { turn: 3.65, reach: 1.02, wobble: 2.25, width: 0.86, cdo: 0.96, stretch: 1.28, lobeCount: 8, offset: 0.2 },
+        'pinhole-eye': { turn: 6.35, reach: 0.72, wobble: 0.34, width: 1.22, cdo: 0.72, stretch: 0.82, lobeCount: 1 },
+        'polygonal-eye': { turn: 5.15, reach: 0.86, wobble: 0.68, width: 1.1, cdo: 0.92, stretch: 0.94, lobeCount: 3 },
+        'concentric-eyewall': { turn: 4.5, reach: 0.98, wobble: 0.86, width: 1.08, cdo: 1.08, stretch: 1.02, lobeCount: 3 },
+        'hot-tower': { turn: 4.85, reach: 1.05, wobble: 1.55, width: 1.02, cdo: 1.05, stretch: 1.05, lobeCount: 6, offset: 0.08 },
+        'moat-ring': { turn: 3.95, reach: 0.84, wobble: 0.42, width: 1.04, cdo: 1.22, stretch: 1.0, lobeCount: 1 },
+        'exposed-llc': { turn: 2.15, reach: 1.2, wobble: 2.2, width: 0.64, cdo: 0.46, stretch: 1.68, lobeCount: 3, offset: 0.42 },
         'open-wave': { turn: 2.45, reach: 1.05, wobble: 1.95, width: 0.72, cdo: 0.58, stretch: 1.55, lobeCount: 3, offset: 0.3 }
     };
     const shape = shapeConfigs[shapeFamily] || shapeConfigs.classic;
@@ -1539,6 +1555,113 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("stroke-dasharray", eyeMaturity > 0.55 ? null : "2 2")
             .attr("stroke-opacity", 0.18 + microwaveRingScore * 0.34)
             .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    if (moatScore > 0.28 && intensity >= 74) {
+        glyph.append("circle")
+            .attr("class", "storm-moat-ring")
+            .attr("r", radius * (0.5 + moatScore * 0.24))
+            .attr("fill", "none")
+            .attr("stroke", "#0f172a")
+            .attr("stroke-width", Math.max(1.4, radius * 0.08))
+            .attr("stroke-opacity", 0.3 + moatScore * 0.26)
+            .attr("vector-effect", "non-scaling-stroke");
+        glyph.append("circle")
+            .attr("class", "storm-moat-edge")
+            .attr("r", radius * (0.56 + moatScore * 0.24))
+            .attr("fill", "none")
+            .attr("stroke", "#fef3c7")
+            .attr("stroke-width", 0.85)
+            .attr("stroke-dasharray", "4 3")
+            .attr("stroke-opacity", 0.2 + moatScore * 0.34)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    if (intensity >= 64 && eyewallSpinRate > 0) {
+        const eyewallRadiusPx = Math.max(radius * 0.24, Math.min(radius * 0.64, finiteOr(structure.rmwKm, 32) / 5.9));
+        const wobblePx = eyewallWobbleKm / 8;
+        const spinPhase = baseAngle + hemi * ((cyclone.age || 0) * (eyewallSpinRate / 360) * 0.38);
+        const streakCount = Math.max(4, Math.min(10, Math.round(4 + eyewallIntegrity * 3 + intensity / 50)));
+        const streakLine = d3.line().x(d => d.x).y(d => d.y).curve(d3.curveCatmullRom.alpha(0.75));
+        for (let i = 0; i < streakCount; i++) {
+            const startAngle = spinPhase + i * Math.PI * 2 / streakCount + shapeSeed * 0.5;
+            const points = [];
+            const arc = 0.28 + eyewallIntegrity * 0.34 + polygonalEyeScore * 0.08;
+            for (let j = 0; j <= 6; j++) {
+                const t = j / 6;
+                const a = startAngle + hemi * (t - 0.5) * arc;
+                const r = eyewallRadiusPx + Math.sin(t * Math.PI) * (1.2 + wobblePx) + Math.sin(i * 1.7 + phase) * 0.8;
+                points.push({ x: Math.cos(a) * r + coreX * 0.18, y: Math.sin(a) * r + coreY * 0.18 });
+            }
+            glyph.append("path")
+                .attr("class", "storm-eyewall-spin-streak")
+                .attr("d", streakLine(points))
+                .attr("fill", "none")
+                .attr("stroke", i % 2 ? "#e0f2fe" : "#67e8f9")
+                .attr("stroke-width", 0.85 + eyewallIntegrity * 0.75)
+                .attr("stroke-linecap", "round")
+                .attr("stroke-opacity", 0.22 + eyewallIntegrity * 0.42)
+                .attr("vector-effect", "non-scaling-stroke")
+                .style("filter", "drop-shadow(0 0 4px rgba(103,232,249,0.35))");
+        }
+    }
+
+    if (mesovortexCount > 0 && intensity >= 83) {
+        const vortexRadius = Math.max(radius * 0.22, Math.min(radius * 0.58, finiteOr(structure.rmwKm, 30) / 6.3));
+        const vortexPhase = baseAngle + hemi * ((cyclone.age || 0) * (eyewallSpinRate || 160) / 360 * 0.45);
+        const points = [];
+        for (let i = 0; i < mesovortexCount; i++) {
+            const a = vortexPhase + i * Math.PI * 2 / mesovortexCount;
+            const r = vortexRadius * (1 + Math.sin(i * 2.1 + phase) * 0.035 * polygonalEyeScore);
+            points.push({ x: Math.cos(a) * r + coreX * 0.12, y: Math.sin(a) * r + coreY * 0.12, a });
+        }
+        if (polygonalEyeScore > 0.42 && points.length >= 3) {
+            glyph.append("path")
+                .attr("class", "storm-polygonal-eye")
+                .attr("d", d3.line().x(d => d.x).y(d => d.y).curve(d3.curveLinearClosed)(points))
+                .attr("fill", "none")
+                .attr("stroke", "#ffffff")
+                .attr("stroke-width", 0.75 + polygonalEyeScore * 0.75)
+                .attr("stroke-opacity", 0.2 + polygonalEyeScore * 0.5)
+                .attr("vector-effect", "non-scaling-stroke");
+        }
+        points.forEach((point, i) => {
+            glyph.append("circle")
+                .attr("class", "storm-mesovortex")
+                .attr("cx", point.x)
+                .attr("cy", point.y)
+                .attr("r", 1.25 + polygonalEyeScore * 1.2 + (i % 2) * 0.25)
+                .attr("fill", i % 2 ? "#fef08a" : "#ffffff")
+                .attr("fill-opacity", 0.52 + polygonalEyeScore * 0.3)
+                .attr("stroke", "#38bdf8")
+                .attr("stroke-width", 0.45)
+                .attr("stroke-opacity", 0.55)
+                .attr("vector-effect", "non-scaling-stroke");
+        });
+    }
+
+    if (hotTowerCount > 0 && intensity >= 40) {
+        const towerTotal = Math.max(2, hotTowerCount);
+        const sectorWidth = Math.PI * (0.34 + hotTowerPotential * 0.5);
+        for (let i = 0; i < towerTotal; i++) {
+            const spread = towerTotal <= 1 ? 0 : (i / (towerTotal - 1) - 0.5);
+            const angle = baseAngle + burstSector + spread * sectorWidth + Math.sin(i + phase) * 0.12;
+            const towerRadius = radius * (0.28 + (i % 3) * 0.08 + hotTowerPotential * 0.18);
+            glyph.append("ellipse")
+                .attr("class", "storm-hot-tower")
+                .attr("cx", Math.cos(angle) * towerRadius + coreX * 0.28)
+                .attr("cy", Math.sin(angle) * towerRadius + coreY * 0.28)
+                .attr("rx", radius * (0.065 + hotTowerPotential * 0.045))
+                .attr("ry", radius * (0.12 + hotTowerPotential * 0.05))
+                .attr("transform", `rotate(${angle * 180 / Math.PI + 90})`)
+                .attr("fill", i % 3 === 0 ? "#ffffff" : "#fef08a")
+                .attr("fill-opacity", 0.2 + hotTowerPotential * 0.34)
+                .attr("stroke", "#f97316")
+                .attr("stroke-width", 0.55)
+                .attr("stroke-opacity", 0.28 + hotTowerPotential * 0.34)
+                .attr("vector-effect", "non-scaling-stroke")
+                .style("filter", "drop-shadow(0 0 5px rgba(250,204,21,0.45))");
+        }
     }
 
     if (convectiveBurstiness > 0.42) {

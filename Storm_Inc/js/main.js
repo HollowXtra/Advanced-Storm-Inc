@@ -51,8 +51,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuSettingsButton = document.getElementById('menuSettingsButton');
     const menuHelpButton = document.getElementById('menuHelpButton');
     const menuLofiButton = document.getElementById('menuLofiButton');
-    const menuLofiFrame = document.getElementById('menuLofiFrame');
+    const menuLofiAudio = document.getElementById('menuLofiAudio');
     const menuLofiTitle = document.getElementById('menuLofiTitle');
+    const menuLofiStationLabel = document.getElementById('menuLofiStationLabel');
+    const menuLofiStatus = document.getElementById('menuLofiStatus');
     const menuBasinSelector = document.getElementById('menuBasinSelector');
     const menuMonthSelector = document.getElementById('menuMonthSelector');
     const menuYearSelector = document.getElementById('menuYearSelector');
@@ -182,9 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
         "SATL - Serendipity Land.m4a",
     ];
     const menuLofiStations = [
-        { title: 'Lofi Girl - Study Radio', videoId: 'jfKfPfyJRdk' },
-        { title: 'Lofi Girl - Sleep Radio', videoId: 'rUxyKA_-grg' },
-        { title: 'Chillhop Radio', videoId: '7NOSDKb0HlU' }
+        { title: 'Storm Radio - Study Loop', src: 'Freshly Squeezed - Graham Donald Harry Preskett.m4a', label: 'Local Mix' },
+        { title: 'Storm Radio - Barotropic', src: 'WPAC - Barotropic.m4a', label: 'Warm Pool' },
+        { title: 'Storm Radio - Static', src: 'NATL - Static.m4a', label: 'Night Desk' },
+        { title: 'Storm Radio - Void', src: 'EPAC - Void.m4a', label: 'Quiet Radar' },
+        { title: 'Storm Radio - Westerlies', src: 'SIO - Westerlies.m4a', label: 'Southern Loop' }
     ];
     let currentTrackIndex = -1;
     let currentMenuLofiIndex = -1;
@@ -483,8 +487,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateMenuLofiStatus(text) {
+        if (menuLofiStatus) menuLofiStatus.textContent = text;
+    }
+
     function shuffleMenuLofi(forceNew = false) {
-        if (!menuLofiFrame || menuLofiStations.length === 0) return;
+        if (!menuLofiAudio || menuLofiStations.length === 0) return;
         let nextIndex = Math.floor(Math.random() * menuLofiStations.length);
         if (forceNew && menuLofiStations.length > 1 && nextIndex === currentMenuLofiIndex) {
             nextIndex = (nextIndex + 1) % menuLofiStations.length;
@@ -492,16 +500,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentMenuLofiIndex = nextIndex;
         const station = menuLofiStations[nextIndex];
-        const params = new URLSearchParams({
-            autoplay: '1',
-            controls: '1',
-            loop: '1',
-            playsinline: '1',
-            rel: '0',
-            playlist: station.videoId
-        });
-        menuLofiFrame.src = `https://www.youtube-nocookie.com/embed/${station.videoId}?${params.toString()}`;
+        menuLofiAudio.loop = true;
+        menuLofiAudio.src = station.src;
+        menuLofiAudio.volume = 0.36;
+        menuLofiAudio.load();
         if (menuLofiTitle) menuLofiTitle.textContent = station.title;
+        if (menuLofiStationLabel) menuLofiStationLabel.textContent = station.label || 'Storm Radio';
+        updateMenuLofiStatus(forceNew ? 'Loading' : 'Ready');
+        if (forceNew) {
+            menuLofiAudio.play()
+                .then(() => updateMenuLofiStatus('Playing'))
+                .catch(() => updateMenuLofiStatus('Ready'));
+        }
     }
 
     function showMainMenu() {
@@ -520,6 +530,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideGameMenu() {
         if (!gameIntroOverlay) return;
         gameIntroOverlay.classList.add('game-shell-hidden');
+        if (menuLofiAudio && !menuLofiAudio.paused) {
+            menuLofiAudio.pause();
+            updateMenuLofiStatus('Paused');
+        }
         clearTimeout(introMenuTimer);
     }
 
@@ -2979,6 +2993,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         playClick();
         shuffleMenuLofi(true);
     });
+    if (menuLofiAudio) {
+        menuLofiAudio.addEventListener('play', () => updateMenuLofiStatus('Playing'));
+        menuLofiAudio.addEventListener('pause', () => updateMenuLofiStatus('Paused'));
+        menuLofiAudio.addEventListener('error', () => updateMenuLofiStatus('Unavailable'));
+    }
     [menuBasinSelector, menuMonthSelector, menuYearSelector].forEach((control) => {
         if (!control) return;
         control.addEventListener('change', () => {

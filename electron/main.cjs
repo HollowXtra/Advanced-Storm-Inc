@@ -146,7 +146,7 @@ function createMainWindow() {
               && !!document.getElementById('satCanvas')
               && !!document.getElementById('gameIntroOverlay')
               && !!document.getElementById('menuStartButton')
-              && !!document.getElementById('menuLofiFrame')
+              && !!document.getElementById('menuLofiAudio')
               && !!generateButton;
 
             if (runSimulationSmoke && baseReady && !clickedStart && generateButton && !generateButton.disabled) {
@@ -215,7 +215,7 @@ function createMainWindow() {
               hasSatelliteCanvas: !!document.getElementById('satCanvas'),
               hasGameIntro: !!document.getElementById('gameIntroOverlay') && !!document.getElementById('introScene'),
               hasGameMenu: !!document.getElementById('mainMenuScene') && !!document.getElementById('menuStartButton'),
-              hasMenuLofi: !!document.getElementById('menuLofiFrame') && !!document.getElementById('menuLofiButton'),
+              hasMenuLofi: !!document.getElementById('menuLofiAudio') && !!document.getElementById('menuLofiButton'),
               hasGenerateButton: !!generateButton,
               clickedStart,
               hasDamageCounter: !!document.getElementById('damageCounter'),

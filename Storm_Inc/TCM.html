@@ -660,13 +660,33 @@
                             <div class="mb-2 flex items-center justify-between gap-3">
                                 <div>
                                     <div class="text-[10px] font-mono font-bold uppercase tracking-[0.28em] text-cyan-200">Lofi Radio</div>
-                                    <div id="menuLofiTitle" class="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">YouTube</div>
+                                    <div id="menuLofiTitle" class="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">Storm Radio</div>
                                 </div>
                                 <button id="menuLofiButton" class="menu-button flex h-9 w-9 items-center justify-center rounded-lg border border-white/12 bg-black/30 text-slate-200 transition hover:border-cyan-300/60 hover:text-cyan-100" title="Shuffle Lofi">
                                     <i class="fa-solid fa-shuffle"></i>
                                 </button>
                             </div>
-                            <iframe id="menuLofiFrame" class="h-44 w-full rounded-lg border border-white/10 bg-black/40" title="YouTube lofi radio" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                            <div id="menuLofiPlayer" class="flex h-44 w-full flex-col justify-between rounded-lg border border-white/10 bg-[radial-gradient(circle_at_25%_20%,rgba(34,211,238,0.18),transparent_38%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(2,6,23,0.96))] p-4 shadow-inner shadow-cyan-950/20">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div id="menuLofiStationLabel" class="text-[10px] font-mono font-black uppercase tracking-[0.22em] text-cyan-100">Local Mix</div>
+                                        <div id="menuLofiStatus" class="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">Ready</div>
+                                    </div>
+                                    <div class="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-950/30 text-cyan-200">
+                                        <i class="fa-solid fa-music"></i>
+                                    </div>
+                                </div>
+                                <div class="flex h-10 items-end gap-1.5">
+                                    <span class="h-4 w-1.5 rounded-full bg-cyan-300/60 shadow-[0_0_12px_rgba(34,211,238,0.4)]"></span>
+                                    <span class="h-7 w-1.5 rounded-full bg-emerald-300/60 shadow-[0_0_12px_rgba(110,231,183,0.35)]"></span>
+                                    <span class="h-5 w-1.5 rounded-full bg-sky-300/60 shadow-[0_0_12px_rgba(125,211,252,0.35)]"></span>
+                                    <span class="h-8 w-1.5 rounded-full bg-cyan-200/70 shadow-[0_0_12px_rgba(165,243,252,0.35)]"></span>
+                                    <span class="h-3 w-1.5 rounded-full bg-slate-300/50"></span>
+                                    <span class="h-6 w-1.5 rounded-full bg-cyan-300/60 shadow-[0_0_12px_rgba(34,211,238,0.35)]"></span>
+                                    <span class="h-4 w-1.5 rounded-full bg-emerald-300/60"></span>
+                                </div>
+                                <audio id="menuLofiAudio" class="w-full h-9" controls preload="metadata"></audio>
+                            </div>
                         </div>
                     </div>
                 </div>

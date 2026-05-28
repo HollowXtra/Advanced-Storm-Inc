@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storm-inc-shell-v11';
+const CACHE_NAME = 'storm-inc-shell-v12';
 const SHELL_ASSETS = [
   './TCM.html',
   './a.png',
@@ -8,6 +8,11 @@ const SHELL_ASSETS = [
   './favicon/android-chrome-512x512.png',
   './favicon/favicon-32x32.png',
   './favicon/favicon-16x16.png',
+  './Freshly Squeezed - Graham Donald Harry Preskett.m4a',
+  './WPAC - Barotropic.m4a',
+  './NATL - Static.m4a',
+  './EPAC - Void.m4a',
+  './SIO - Westerlies.m4a',
   './js/audio.js',
   './js/city-data.js',
   './js/cyclone-model.js',

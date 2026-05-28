@@ -137,6 +137,25 @@ const fragmentShaderSource = `
         // [修改] 使用 dynamic_storm_radius 替代原有的 u_storm_radius
         float storm_falloff = 1.0 - smoothstep(dynamic_storm_radius, dynamic_storm_radius + 0.2, distorted_dist);
         noise_val *= storm_falloff;
+
+        float eye_band_gap = max(0.055, abs(u_eye_radius) + 0.055 + u_wind_shear_strength * 0.2);
+        float outer_band_zone = smoothstep(eye_band_gap, eye_band_gap + 0.08, dist)
+                              * (1.0 - smoothstep(dynamic_storm_radius * 0.92, dynamic_storm_radius + 0.28, distorted_dist));
+        float feeder_phase = spiral_angle * 6.5 + dist * 20.0 - u_time * 0.22 * u_hemisphere;
+        float feeder_wave = pow(max(0.0, 0.5 + 0.5 * cos(feeder_phase)), 3.2);
+        float secondary_phase = spiral_angle * 10.5 + dist * 34.0 + u_time * 0.17 * u_hemisphere;
+        float secondary_wave = pow(max(0.0, 0.5 + 0.5 * cos(secondary_phase)), 5.0);
+        float band_texture = 0.48 + 0.52 * fbm(noise_uv * 1.9 + u_random_seed * 0.73);
+        float band_asym = 0.58 + 0.42 * smoothstep(-0.8, 0.9, asym_factor);
+        float feeder_bands = outer_band_zone * band_asym * band_texture * (feeder_wave * 0.18 + secondary_wave * 0.1);
+
+        float inner_band_zone = smoothstep(eye_band_gap * 0.72, eye_band_gap + 0.07, dist)
+                              * (1.0 - smoothstep(dynamic_storm_radius * 0.72, dynamic_storm_radius + 0.16, dist));
+        float inner_phase = spiral_angle * 14.0 + dist * 44.0 - u_time * 0.35 * u_hemisphere;
+        float inner_curved_bands = pow(max(0.0, 0.5 + 0.5 * cos(inner_phase)), 6.0)
+                                 * inner_band_zone
+                                 * (0.5 + 0.5 * fbm(noise_uv * 3.0 + 2.0));
+        noise_val += feeder_bands + inner_curved_bands * 0.075;
         
         // 3. 中心云团 (CDO)
         float central_mass_value = 0.0;
@@ -180,11 +199,12 @@ const fragmentShaderSource = `
                              * (0.72 + 0.28 * fbm(uv * 10.0 + u_time * 0.18));
         float rain_canopy = u_rain_shield
                           * (1.0 - smoothstep(dynamic_storm_radius * 0.58, dynamic_storm_radius + 0.32, dist))
-                          * (0.35 + 0.65 * fbm(noise_uv * 0.8 + 4.0));
+                          * (0.28 + 0.72 * fbm(noise_uv * 0.8 + 4.0))
+                          * (0.72 + 0.28 * max(feeder_wave, secondary_wave));
 
         noise_val = max(noise_val, central_mass_value * 0.86);
         noise_val = max(noise_val, outer_eyewall * 0.92);
-        noise_val += rain_canopy * 0.18;
+        noise_val += rain_canopy * 0.2;
         float cloud_texture_gate = 0.82 + 0.18 * fbm(noise_uv * 2.4 + u_time * 0.2);
         noise_val *= cloud_texture_gate;
         noise_val = min(noise_val, 0.94);
@@ -383,7 +403,11 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     const moatScore = Math.max(0, Math.min(1, Number(structure?.moatScore || 0)));
     const eyewallIntegrity = Math.max(0, Math.min(1, Number(structure?.eyewallIntegrity || eyeMaturity)));
     const shapeFamily = structure?.shapeFamily || 'classic';
-    target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
+    const rainShieldKm = Number(structure?.rainShieldKm || 0);
+    const fallbackRainShield = intensityKnots >= 96
+        ? 0.34 + bandingMaturity * 0.22
+        : (intensityKnots >= 64 ? 0.26 + bandingMaturity * 0.2 : (intensityKnots >= 34 ? 0.16 : 0.06));
+    target.rainShield = Math.max(0, Math.min(1, rainShieldKm > 0 ? rainShieldKm / 950 : fallbackRainShield));
 
     if (pinholeScore > 0.55 && intensityKnots >= 96 && eyeMaturity > 0.64) {
         target.eye = Math.max(0.006, target.eye * 0.42);
@@ -500,8 +524,8 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     }
     if (intensityKnots >= 64 && !isExtratropical && !isSubtropical) {
         target.centralMass = Math.min(target.centralMass, 0.24);
-        target.stormRadius = Math.min(target.stormRadius, 0.34);
-        target.cloudLow = Math.max(target.cloudLow, 0.16);
+        target.stormRadius = Math.min(target.stormRadius, 0.37);
+        target.cloudLow = Math.max(target.cloudLow, 0.135);
     }
 
     // ============================================================

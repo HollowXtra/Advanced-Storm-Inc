@@ -8,10 +8,15 @@ let elevationData = null; // 存储高程图像素数据 (RGBA)
 let landMaskData = null;  // 存储陆地遮罩像素数据 (Alpha channel only is enough, but we use RGBA)
 let mapWidth = 0;
 let mapHeight = 0;
+let fictioniaTerrainActive = false;
 
 const MAX_ELEVATION_METERS = 680; // 设定最大海拔
 
 // 初始化地形系统
+export function setFictioniaTerrainActive(active) {
+    fictioniaTerrainActive = !!active;
+}
+
 export function initTerrainSystem(imageUrl, worldData) {
     return new Promise((resolve, reject) => {
         // 1. 加载高程图
@@ -58,7 +63,13 @@ export function initTerrainSystem(imageUrl, worldData) {
                 // 绘制陆地（陆地 = 白色）
                 maskCtx.fillStyle = '#FFFFFF';
                 maskCtx.beginPath();
-                pathGenerator(worldData);
+                const terrainWorldData = worldData?.features
+                    ? {
+                        ...worldData,
+                        features: worldData.features.filter(feature => !feature?.properties?.fictionia)
+                    }
+                    : worldData;
+                pathGenerator(terrainWorldData);
                 maskCtx.fill();
 
                 // 获取遮罩数据
@@ -110,8 +121,10 @@ export function getElevationAt(lon, lat) {
 // 获取陆地状态 (包含 isLand 和 isNearLand)
 // nearThresholdDeg: 近岸判定阈值，单位度。默认 0.2 度
 export function getLandStatus(lon, lat, nearThresholdDeg = 0.2) {
-    const fictioniaStatus = getFictioniaLandStatus(lon, lat, nearThresholdDeg);
-    if (fictioniaStatus.isLand || fictioniaStatus.isNearLand) return fictioniaStatus;
+    if (fictioniaTerrainActive) {
+        const fictioniaStatus = getFictioniaLandStatus(lon, lat, nearThresholdDeg);
+        if (fictioniaStatus.isLand || fictioniaStatus.isNearLand) return fictioniaStatus;
+    }
 
     if (!landMaskData) return { isLand: false, isNearLand: false };
 

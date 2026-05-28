@@ -1090,7 +1090,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             : clamp((updatedCyclone.ohcKjCm2 - 35) / 115, -0.38, 0.85);
         mpi *= 1 + ohcSupport * (isMedicane ? 0.28 : 0.42);
         if (!isOverLand && updatedCyclone.waterFuelIndex > 0) {
-            mpi += updatedCyclone.waterFuelIndex * (isMedicane ? 5.5 : 11);
+            mpi += updatedCyclone.waterFuelIndex * (isMedicane ? 7 : 18);
         }
 
         // ERC Logic
@@ -1144,15 +1144,16 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
 
         // Growth Rate Logic
         let latF = (0.4 / Math.abs(updatedCyclone.lat) ** 2) * (updatedCyclone.intensity / 50);
-        let ri = Math.random() > (0.97 - updatedCyclone.waterFuelIndex * 0.035)
-            ? Math.random() * (0.35 + updatedCyclone.waterFuelIndex * 0.22) - 0.04
+        const warmPoolRiAssist = updatedCyclone.ohcKjCm2 >= (isMedicane ? 55 : 140) ? 0.018 : 0;
+        let ri = Math.random() > (0.965 - updatedCyclone.waterFuelIndex * 0.055 - warmPoolRiAssist)
+            ? Math.random() * (0.42 + updatedCyclone.waterFuelIndex * 0.3) - 0.035
             : 0;
         let intensificationRate = Math.random() * (0.14 + ri) * Math.min(1, ((updatedCyclone.intensity - 13) / 65)) - latF; // [保留]
         if (isMedicane) {
             intensificationRate = Math.random() * (0.085 + ri * 0.45) * clamp((updatedCyclone.intensity - 14) / 48, 0.15, 1.0) + 0.012 - totalShear * 0.00055;
         }
         intensificationRate += updatedCyclone.waterFuelIndex
-            * (isMedicane ? 0.018 : 0.032)
+            * (isMedicane ? 0.021 : 0.042)
             * clamp((updatedCyclone.intensity - 17) / 55, 0.22, 1.05);
 
         if (updatedCyclone.isMonsoonDepression) {
@@ -1220,7 +1221,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         const warmWaterOrganizationBoost = (!isOverLand && !updatedCyclone.isTransitioning && updatedCyclone.waterFuelIndex >= 0.65 && updatedCyclone.intensity < 45)
             ? clamp((updatedCyclone.ohcKjCm2 - (isMedicane ? 16 : 70)) / (isMedicane ? 60 : 110), 0, 1.15)
                 * clamp(((isMedicane ? 36 : 42) - totalShear) / (isMedicane ? 30 : 38), isMedicane ? 0.08 : 0.12, 1.15)
-                * (updatedCyclone.intensity < 34 ? (isMedicane ? 0.75 : 1.35) : (isMedicane ? 0.42 : 0.72))
+                * (updatedCyclone.intensity < 34 ? (isMedicane ? 0.85 : 1.85) : (isMedicane ? 0.5 : 0.95))
             : 0;
         const totalWaterBoost = waterFuelBoost + deepWarmCoreBoost + warmWaterOrganizationBoost;
         updatedCyclone.waterFuelBoostKt = Number(totalWaterBoost.toFixed(2));

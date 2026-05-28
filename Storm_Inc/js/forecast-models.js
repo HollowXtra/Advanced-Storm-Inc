@@ -117,14 +117,14 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                         const ohc = calculateOceanHeatContent(tempCyclone.lat, tempCyclone.lon, cyclone.currentMonth || 8, globalTemp);
                         const ohcSupport = Math.max(-0.28, Math.min(0.65, (ohc.ohcKjCm2 - 10) / 58));
                         const waterFuel = Math.max(0, Math.min(1.15, (ohc.ohcKjCm2 - 8) / 62));
-                        mpi *= 1 + ohcSupport * 0.22;
-                        mpi += waterFuel * 4.5;
+                        mpi *= 1 + ohcSupport * 0.26;
+                        mpi += waterFuel * 6;
                     } else if (sst >= 24.7) {
                         const ohc = calculateOceanHeatContent(tempCyclone.lat, tempCyclone.lon, cyclone.currentMonth || 8, globalTemp);
                         const ohcSupport = Math.max(-0.38, Math.min(0.85, (ohc.ohcKjCm2 - 35) / 115));
                         const waterFuel = Math.max(0, Math.min(1.25, (ohc.ohcKjCm2 - 35) / 115));
-                        mpi *= 1 + ohcSupport * 0.34;
-                        mpi += waterFuel * 9;
+                        mpi *= 1 + ohcSupport * 0.4;
+                        mpi += waterFuel * 14;
                     }
                     const safeShearU = Number.isFinite(shearU) ? shearU : 0;
                     const safeShearV = Number.isFinite(shearV) ? shearV : 0;
@@ -135,7 +135,7 @@ export function generatePathForecasts(cyclone, pressureSystems, checkLandFunc = 
                         ? (gap > 0 ? Math.random()*0.025 + 0.045 - 0.5/lastCalculatedIntensity - (totalShear * 0.0038) : 0.08 + (totalShear * 0.0024))
                         : (gap > 0 ? Math.random()*0.04 + 0.07 - 0.9/lastCalculatedIntensity - (totalShear * 0.005) : 0.11 + (totalShear * 0.003));
                     const forecastWaterFuel = gap > 0 ? Math.max(0, Math.min(1.2, gap / 90)) : 0;
-                    nextIntensity += gap * (changeRate + forecastWaterFuel * (isMedicane ? 0.01 : 0.016));
+                    nextIntensity += gap * (changeRate + forecastWaterFuel * (isMedicane ? 0.012 : 0.022));
                     const currentForecastAge = startAge + (t * PATH_STEP_HOURS);
                     
                     if (tempCyclone.shearEventActive && currentForecastAge < tempCyclone.shearEventEndTime) {

@@ -9,7 +9,7 @@ import { RadarRenderer, calculateRadarDbz, getShaderWindVector } from './radar-s
 import { DopplerRenderer } from './radar-doppler.js';
 // [新增] 导入卫星云图模块
 import { initSatelliteView, updateSatelliteView, resetSatelliteParams, setSatelliteGrayscale, getSatelliteSnapshot } from './satellite-view.js';
-import { initTerrainSystem, getElevationAt, getLandStatus } from './terrain-data.js';
+import { initTerrainSystem, getElevationAt, getLandStatus, setFictioniaTerrainActive } from './terrain-data.js';
 import { initializeCyclone, initializePressureSystems, updatePressureSystems, updateFrontalZone, updateCycloneState, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 // [修改] 引入新的历史强度图绘制函数
@@ -18,7 +18,7 @@ import { buildWarningAdvisory, createImpactState, formatDamage, formatRain, form
 import { buildInvestDisplayId, buildInvestId, classifyInvestChance } from './invest-system.js';
 import { estimateRainAtPoint, estimateRainEnhancedSurge, getPagasaName, pointInPAR } from './environment-model.js';
 import { playClick, playToggleOn, playToggleOff, playStart, playError, playAlert, playUpgradeSound, playCat5Sound, toggleSFX } from './audio.js';
-import { addFictioniaToWorld, FICTIONIA_BASIN, FICTIONIA2_BASIN, FICTIONIA_CENTER } from './fictionia-map.js';
+import { addFictioniaToWorld, FICTIONIA_BASIN, FICTIONIA2_BASIN, FICTIONIA_CENTER, isFictioniaBasin } from './fictionia-map.js';
 
 const checkLandWrapper = (lon, lat) => {
     const status = getLandStatus(lon, lat);
@@ -50,6 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuMultiplayerButton = document.getElementById('menuMultiplayerButton');
     const menuSettingsButton = document.getElementById('menuSettingsButton');
     const menuHelpButton = document.getElementById('menuHelpButton');
+    const menuLofiButton = document.getElementById('menuLofiButton');
+    const menuLofiFrame = document.getElementById('menuLofiFrame');
+    const menuLofiTitle = document.getElementById('menuLofiTitle');
     const menuBasinSelector = document.getElementById('menuBasinSelector');
     const menuMonthSelector = document.getElementById('menuMonthSelector');
     const menuYearSelector = document.getElementById('menuYearSelector');
@@ -174,7 +177,13 @@ document.addEventListener('DOMContentLoaded', () => {
         "SIO - Westerlies.m4a",
         "SATL - Serendipity Land.m4a",
     ];
+    const menuLofiStations = [
+        { title: 'Lofi Girl - Study Radio', videoId: 'jfKfPfyJRdk' },
+        { title: 'Lofi Girl - Sleep Radio', videoId: 'rUxyKA_-grg' },
+        { title: 'Chillhop Radio', videoId: '7NOSDKb0HlU' }
+    ];
     let currentTrackIndex = -1;
+    let currentMenuLofiIndex = -1;
     stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
     stats.dom.style.position = 'absolute'; // 样式调整以适应你的布局
     stats.dom.style.top = '0px';
@@ -393,6 +402,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return basinViewCenters[basin] || basinViewCenters.WPAC;
     }
 
+    function syncFictioniaTerrainMode(basin = basinSelector?.value || state.cyclone?.basin || 'WPAC') {
+        setFictioniaTerrainActive(isFictioniaBasin(basin));
+    }
+
     function isMobilePerformanceDevice() {
         const narrowViewport = window.matchMedia?.('(max-width: 900px)').matches || false;
         const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches || false;
@@ -465,11 +478,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function shuffleMenuLofi(forceNew = false) {
+        if (!menuLofiFrame || menuLofiStations.length === 0) return;
+        let nextIndex = Math.floor(Math.random() * menuLofiStations.length);
+        if (forceNew && menuLofiStations.length > 1 && nextIndex === currentMenuLofiIndex) {
+            nextIndex = (nextIndex + 1) % menuLofiStations.length;
+        }
+
+        currentMenuLofiIndex = nextIndex;
+        const station = menuLofiStations[nextIndex];
+        const params = new URLSearchParams({
+            autoplay: '1',
+            controls: '1',
+            loop: '1',
+            playsinline: '1',
+            rel: '0',
+            playlist: station.videoId
+        });
+        menuLofiFrame.src = `https://www.youtube-nocookie.com/embed/${station.videoId}?${params.toString()}`;
+        if (menuLofiTitle) menuLofiTitle.textContent = station.title;
+    }
+
     function showMainMenu() {
         if (!gameIntroOverlay || !mainMenuScene || !introScene) return;
         clearTimeout(introMenuTimer);
         syncMenuControlsFromMain();
         updateGameMenuState();
+        if (currentMenuLofiIndex < 0) shuffleMenuLofi(false);
         gameIntroOverlay.classList.remove('game-shell-hidden');
         introScene.classList.add('hidden');
         mainMenuScene.classList.remove('hidden');
@@ -894,6 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. 先加载地图数据
     function redrawIdleBasinPreview() {
         if (!mapSvg || !mapProjection || !state.world || state.cyclone?.status === 'active') return;
+        syncFictioniaTerrainMode(basinSelector?.value || 'WPAC');
         const { width, height } = mapContainer.node().getBoundingClientRect();
         const center = getBasinViewCenter(basinSelector?.value || 'WPAC');
         mapProjection.rotate([0, 0]).center([center.lon, center.lat]).translate([width / 2, height / 2]);
@@ -1179,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = '1.0.3.4';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.5';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -1457,6 +1493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.isSiteSelected = !!saved.isSiteSelected;
         state.cyclone.currentMonth = state.currentMonth;
         state.cyclone.currentYear = state.currentYear;
+        syncFictioniaTerrainMode(state.cyclone.basin || state.lastBasin || 'WPAC');
 
         const active = state.cyclone.status === 'active';
         state.isPaused = active ? !saved.wasRunning : false;
@@ -2597,6 +2634,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         pauseButton.innerHTML = '<i class="fa-solid fa-pause text-xs"></i>';
         
         const selectedBasin = basinSelector.value;
+        syncFictioniaTerrainMode(selectedBasin);
         if (!state.lastBasin || state.lastBasin !== selectedBasin) {
             const list = NAME_LISTS[selectedBasin] || NAME_LISTS['WPAC'];
             state.nextNameIndex = Math.floor(Math.random() * list.length);
@@ -2908,6 +2946,10 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     if (menuHelpButton) menuHelpButton.addEventListener('click', () => {
         hideGameMenu();
         helpButton?.click();
+    });
+    if (menuLofiButton) menuLofiButton.addEventListener('click', () => {
+        playClick();
+        shuffleMenuLofi(true);
     });
     [menuBasinSelector, menuMonthSelector, menuYearSelector].forEach((control) => {
         if (!control) return;
@@ -4272,7 +4314,7 @@ contentArea.innerHTML = `
                     const p = forecastTrack[i];
                     // p[0] = lon, p[1] = lat
                     // 使用 terrain-data.js 里的 getLandStatus 检测
-                    if (getLandStatus(p[0], p[1]) === 'land') {
+                    if (getLandStatus(p[0], p[1]).isLand) {
                         willLandfall = true;
                         break; // 只要有一点碰到陆地，就触发警报
                     }

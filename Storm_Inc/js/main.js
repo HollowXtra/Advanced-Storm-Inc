@@ -80,6 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const mpSendButton = document.getElementById('mpSendButton');
     const irBwCheckbox = document.getElementById('irBwCheckbox');
     const satelliteInsetCheckbox = document.getElementById('satelliteInsetCheckbox');
+    const customNameListInput = document.getElementById('customNameListInput');
+    const saveNameListButton = document.getElementById('saveNameListButton');
+    const resetNameListButton = document.getElementById('resetNameListButton');
+    const nameListBasinLabel = document.getElementById('nameListBasinLabel');
+    const nameListStatus = document.getElementById('nameListStatus');
     const basinSelector = document.getElementById('basinSelector');
     const monthSelector = document.getElementById('monthSelector');
     const yearSelector = document.getElementById('yearSelector');
@@ -357,6 +362,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${Math.abs(normalized).toFixed(1)}\u00B0${normalized < 0 ? 'W' : 'E'}`;
     }
 
+    const CUSTOM_NAME_LISTS_KEY = 'tcs_custom_name_lists_v1';
+    const PLAYER_ANALYSIS_KEY = 'tcs_player_analysis_v1';
+    const parseNameListText = (text) => {
+        const seen = new Set();
+        return String(text || '')
+            .split(/[\n,;]+/)
+            .map(name => name.trim())
+            .filter(name => name.length >= 2 && name.length <= 24)
+            .filter(name => {
+                const key = name.toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, 120);
+    };
+    const loadJsonMap = (key) => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    };
+    const saveJsonMap = (key, value) => {
+        localStorage.setItem(key, JSON.stringify(value || {}));
+    };
+    const savedCustomNameLists = loadJsonMap(CUSTOM_NAME_LISTS_KEY);
+    const savedPlayerAnalyses = loadJsonMap(PLAYER_ANALYSIS_KEY);
+
     let state = {
         simulationInterval: null,
         isPaused: false,
@@ -394,6 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
         history: [],
         simulationCount: 1,
         nextNameIndex: 0,
+        customNameLists: savedCustomNameLists,
+        playerAnalyses: savedPlayerAnalyses,
         nextPagasaNameIndex: 0,
         selectedHistoryTrackData: '',
         lastFinalStats: null,
@@ -419,6 +456,34 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let mapSvg, mapProjection;
+
+    function getActiveNameList(basin = basinSelector?.value || 'WPAC') {
+        const custom = state.customNameLists?.[basin];
+        return Array.isArray(custom) && custom.length ? custom : (NAME_LISTS[basin] || NAME_LISTS.WPAC);
+    }
+
+    function getActiveNameLists() {
+        const merged = { ...NAME_LISTS };
+        Object.entries(state.customNameLists || {}).forEach(([basin, names]) => {
+            if (Array.isArray(names) && names.length) merged[basin] = names;
+        });
+        return merged;
+    }
+
+    function syncCustomNameListEditor() {
+        const basin = basinSelector?.value || 'WPAC';
+        const custom = state.customNameLists?.[basin];
+        if (nameListBasinLabel) nameListBasinLabel.textContent = basin;
+        if (customNameListInput) {
+            customNameListInput.value = Array.isArray(custom) ? custom.join('\n') : '';
+            customNameListInput.placeholder = `Default: ${(NAME_LISTS[basin] || NAME_LISTS.WPAC).slice(0, 6).join(', ')}...`;
+        }
+        if (nameListStatus) {
+            const active = Array.isArray(custom) && custom.length;
+            nameListStatus.textContent = active ? `${custom.length} custom names active` : 'Default basin list active';
+            nameListStatus.className = `mt-2 text-[9px] font-mono uppercase tracking-wider ${active ? 'text-cyan-300' : 'text-slate-500'}`;
+        }
+    }
 
     function syncSatelliteInsetVisibility(active = state.showSatelliteInset && state.cyclone?.status === 'active') {
         const satWindow = document.getElementById('satellite-window');
@@ -1283,7 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.12';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.13';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -2562,7 +2627,7 @@ document.getElementById('map-info-intensity').textContent = `${state.cyclone.isI
         const previousInvestStatus = state.cyclone.investStatus;
         state.pressureSystems = updatePressureSystems(state.pressureSystems, state.cyclone.currentMonth, state.GlobalTemp, state.GlobalShear);
         state.frontalZone = updateFrontalZone(state.pressureSystems, state.currentMonth, state.GlobalTemp, state.GlobalShear);
-        state.cyclone = updateCycloneState(state.cyclone, state.pressureSystems, state.frontalZone, state.world, state.currentMonth, state.GlobalTemp, state.GlobalShear, state.nextNameIndex);
+        state.cyclone = updateCycloneState(state.cyclone, state.pressureSystems, state.frontalZone, state.world, state.currentMonth, state.GlobalTemp, state.GlobalShear, state.nextNameIndex, getActiveNameLists());
         updatePagasaNaming();
         refreshInvestOutlook(wasInvest !== !!state.cyclone.isInvest || previousInvestStatus !== state.cyclone.investStatus);
         updateImpactState(state.impactState, state.cyclone);
@@ -2776,7 +2841,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         const selectedBasin = basinSelector.value;
         syncFictioniaTerrainMode(selectedBasin);
         if (!state.lastBasin || state.lastBasin !== selectedBasin) {
-            const list = NAME_LISTS[selectedBasin] || NAME_LISTS['WPAC'];
+            const list = getActiveNameList(selectedBasin);
             state.nextNameIndex = Math.floor(Math.random() * list.length);
         }
         state.lastBasin = selectedBasin;
@@ -3255,7 +3320,41 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     settingsButton.addEventListener('click', () => {
         playClick();
         settingsMenu.classList.toggle('hidden');
+        syncCustomNameListEditor();
     });
+
+    if (saveNameListButton) {
+        saveNameListButton.addEventListener('click', () => {
+            const basin = basinSelector?.value || 'WPAC';
+            const parsedNames = parseNameListText(customNameListInput?.value || '');
+            if (parsedNames.length < 4) {
+                if (nameListStatus) {
+                    nameListStatus.textContent = 'Add at least 4 names';
+                    nameListStatus.className = 'mt-2 text-[9px] font-mono uppercase tracking-wider text-red-300';
+                }
+                playError();
+                return;
+            }
+            state.customNameLists = { ...(state.customNameLists || {}), [basin]: parsedNames };
+            saveJsonMap(CUSTOM_NAME_LISTS_KEY, state.customNameLists);
+            state.nextNameIndex = state.nextNameIndex % parsedNames.length;
+            syncCustomNameListEditor();
+            playClick();
+        });
+    }
+
+    if (resetNameListButton) {
+        resetNameListButton.addEventListener('click', () => {
+            const basin = basinSelector?.value || 'WPAC';
+            const updated = { ...(state.customNameLists || {}) };
+            delete updated[basin];
+            state.customNameLists = updated;
+            saveJsonMap(CUSTOM_NAME_LISTS_KEY, state.customNameLists);
+            state.nextNameIndex = state.nextNameIndex % getActiveNameList(basin).length;
+            syncCustomNameListEditor();
+            playClick();
+        });
+    }
 
     if (yearSelector) {
         const syncYearFromInput = () => {
@@ -3441,7 +3540,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
             state.customLat = null;
         }
     });
-    basinSelector.addEventListener('change', redrawIdleBasinPreview);
+    basinSelector.addEventListener('change', () => {
+        syncCustomNameListEditor();
+        redrawIdleBasinPreview();
+    });
+    syncCustomNameListEditor();
 
     copyTrackButton.addEventListener('click', () => {
         bestTrackData.select();
@@ -3639,6 +3742,95 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
     });
 
     // 绑定 JTWC 按钮点击事件
+    const SATELLITE_PRODUCT_CATALOG = [
+        { key: 'VIS', label: 'Visible', signal: 'Low cloud swirl and exposed center fixes.' },
+        { key: 'IR', label: 'IR Window', signal: 'Cold cloud tops and CDO coverage.' },
+        { key: 'BD', label: 'Dvorak BD', signal: 'Pattern T-number and eye temperature contrast.' },
+        { key: 'WV', label: 'Water Vapor', signal: 'Dry slots, outflow channels, and upper lows.' },
+        { key: 'RGB', label: 'RGB Composite', signal: 'Day/night cloud phase and structure split.' },
+        { key: 'MW37', label: '37GHz Microwave', signal: 'Low-level rainband and eyewall arcs.' },
+        { key: 'MW89', label: '89GHz Microwave', signal: 'Deep convective ring and hot towers.' },
+        { key: 'SCAT', label: 'Scatterometer', signal: 'Surface wind field and closed circulation.' },
+        { key: 'SAR', label: 'SAR TC Winds', signal: 'High-resolution ocean surface wind streaks.' },
+        { key: 'ADT', label: 'ADT', signal: 'Objective IR intensity estimate.' },
+        { key: 'HISA', label: 'HISA', signal: 'Microwave Vmax/MSLP/radii estimate.' },
+        { key: 'MTCSWA', label: 'MTCSWA', signal: 'Multi-source surface wind analysis.' },
+        { key: 'eTRaP', label: 'eTRaP Rain', signal: 'Satellite rainfall ensemble and totals.' }
+    ];
+
+    const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const getAnalysisKey = (cyclone, targetHour) => {
+        const first = cyclone?.track?.[0] || [];
+        const starter = `${Number(first[0] || 0).toFixed(1)},${Number(first[1] || 0).toFixed(1)}`;
+        const id = cyclone?.name || cyclone?.investId || cyclone?.investDisplayId || `SIM${state.simulationCount}`;
+        return `${getActiveSimulationYear(cyclone)}:${cyclone?.basin || 'WPAC'}:${id}:${starter}:${targetHour}`;
+    };
+
+    function getTargetStructure(cyclone) {
+        return cyclone?.stormStructure || {};
+    }
+
+    function buildSatelliteDiagnostics(cyclone, trackPoint, targetHour) {
+        const intensity = Number(trackPoint?.[2] || cyclone?.intensity || 0);
+        const pressure = Number.isFinite(Number(trackPoint?.[10]))
+            ? Number(trackPoint[10])
+            : windToPressure(intensity, Number(trackPoint?.[5] || cyclone?.circulationSize || 300), cyclone?.basin || 'WPAC');
+        const structure = getTargetStructure(cyclone);
+        const banding = Math.round(Number(structure.bandingMaturity || 0) * 100);
+        const eye = Math.round(Number(structure.eyeMaturity || 0) * 100);
+        const cold = Math.round(Number(structure.coldCloudShield || 0) * 100);
+        const burst = Math.round(Number(structure.convectiveBurstiness || 0) * 100);
+        const mw = Math.round(Number(structure.microwaveRingScore || 0) * 100);
+        const outflow = Math.round(Number(structure.outflowChannels || 0) * 100);
+        const confidence = Math.max(18, Math.min(96, Math.round((banding + eye + mw + Math.max(cold, burst) + outflow) / 5)));
+        const scene = String(structure.satelliteScene || structure.shapeFamily || 'open-wave').replace(/-/g, ' ').toUpperCase();
+        const rows = SATELLITE_PRODUCT_CATALOG.map(product => {
+            let value = '--';
+            if (product.key === 'VIS') value = scene;
+            if (product.key === 'IR') value = `CDO ${cold}%`;
+            if (product.key === 'BD') value = `T${Math.max(1, Math.min(8, intensity / 18 + eye / 130)).toFixed(1)}`;
+            if (product.key === 'WV') value = `OUTFLOW ${outflow}%`;
+            if (product.key === 'RGB') value = `BANDING ${banding}%`;
+            if (product.key === 'MW37') value = `LOW RING ${Math.max(banding, mw)}%`;
+            if (product.key === 'MW89') value = `DEEP RING ${mw}%`;
+            if (product.key === 'SCAT') value = intensity >= 34 ? `CLOSED ${Math.max(35, banding)}%` : `OPEN ${100 - banding}%`;
+            if (product.key === 'SAR') value = `${Math.round(intensity)} kt VMAX`;
+            if (product.key === 'ADT') value = `${Math.round(intensity + (eye - 45) * 0.04)} kt`;
+            if (product.key === 'HISA') value = `${Math.round(intensity)} kt / ${Math.round(pressure)} hPa`;
+            if (product.key === 'MTCSWA') value = `${Math.round(intensity * 0.86)}-${Math.round(intensity * 1.08)} kt`;
+            if (product.key === 'eTRaP') value = `${Math.round(Number(cyclone?.rainRateMmHr || 0))} mm/h`;
+            return { ...product, value };
+        });
+        return { scene, confidence, targetHour, rows, summary: `${scene} / eye ${eye}% / banding ${banding}% / microwave ${mw}% / burst ${burst}%` };
+    }
+
+    function buildReconReanalysis(cyclone, trackPoint, targetHour) {
+        const structure = getTargetStructure(cyclone);
+        const baseWind = Number(trackPoint?.[2] || cyclone?.intensity || 0);
+        const size = Number(trackPoint?.[5] || cyclone?.circulationSize || 300);
+        const basin = cyclone?.basin || basinSelector.value || 'WPAC';
+        const pressure = Number.isFinite(Number(trackPoint?.[10])) ? Number(trackPoint[10]) : windToPressure(baseWind, size, basin);
+        const reconWind = Math.max(15, Math.round((baseWind + Number(structure.eyeMaturity || 0) * 4 + Number(structure.microwaveRingScore || 0) * 5 + Number(structure.convectiveBurstiness || 0) * 3 - Number(structure.asymmetry || 0) * 2.5) / 5) * 5);
+        const reconPressure = Math.round(pressure - (reconWind - baseWind) * 0.85 - Number(structure.eyeMaturity || 0) * 3);
+        const category = getCategory(reconWind, false, cyclone?.isExtratropical, cyclone?.isSubtropical);
+        return {
+            issued: new Date().toISOString(),
+            targetHour,
+            vmax: reconWind,
+            mslp: reconPressure,
+            category: category.shortName,
+            fix: `${formatLatitude(Number(trackPoint?.[1] || cyclone?.lat || 0))} ${formatLongitude(Number(trackPoint?.[0] || cyclone?.lon || 0))}`,
+            method: 'SFMR + dropsonde + microwave reanalysis',
+            notes: `Recon estimate only. Player analysis remains unchanged. Satellite support: ${buildSatelliteDiagnostics(cyclone, trackPoint, targetHour).summary}.`
+        };
+    }
+
     generateJTWCButton.addEventListener('click', () => {
         console.log("JTWC Button Clicked");
         const targetCyclone = state.selectedHistoryCyclone || state.cyclone;
@@ -3679,6 +3871,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
                     <div class="mt-2 text-[9px] font-bold uppercase tracking-[0.24em] text-slate-500">Analysis</div>
                     <button id="jtwc-tab-satellite" class="icwc-tab"><i class="fa-solid fa-satellite"></i><span>Satellite</span></button>
+                    <button id="jtwc-tab-analysis" class="icwc-tab"><i class="fa-solid fa-clipboard-list"></i><span>Analysis Desk</span></button>
                     <button id="jtwc-tab-phase" class="icwc-tab"><i class="fa-solid fa-diagram-project"></i><span>Phase Space</span></button>
                     <button id="jtwc-tab-station" class="icwc-tab"><i class="fa-solid fa-tower-cell"></i><span>Station Obs</span></button>
                     <button id="jtwc-tab-synoptic" class="icwc-tab"><i class="fa-solid fa-chart-area"></i><span>Synoptic Chart</span></button>
@@ -3699,6 +3892,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         const tabSpaghetti = document.getElementById('jtwc-tab-spaghetti');
         const tabModels = document.getElementById('jtwc-tab-models');
         const tabSatellite = document.getElementById('jtwc-tab-satellite');
+        const tabAnalysis = document.getElementById('jtwc-tab-analysis');
         const tabStation = document.getElementById('jtwc-tab-station');
         const tabSynoptic = document.getElementById('jtwc-tab-synoptic');
         const tabPhase = document.getElementById('jtwc-tab-phase');
@@ -3726,7 +3920,7 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         };
 
         const updateTabStyles = (activeTab) => {
-            [tabGraphic, tabSpaghetti, tabModels, tabProb34, tabProb64, tabSatellite, tabPhase, tabStation, tabSynoptic].forEach(tab => {
+            [tabGraphic, tabSpaghetti, tabModels, tabProb34, tabProb64, tabSatellite, tabAnalysis, tabPhase, tabStation, tabSynoptic].forEach(tab => {
                 if (tab === activeTab) {
                     tab.className = "icwc-tab is-active";
                 } else {
@@ -3996,14 +4190,17 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
 
            // 3. 渲染 UI
             const container = document.createElement('div');
-            container.className = "w-full h-full flex flex-col items-center justify-center bg-[#1a1a1a] relative";
+            container.className = "w-full h-full grid grid-cols-[minmax(0,1fr)_20rem] gap-3 bg-[#1a1a1a] p-3";
+            const imageHost = document.createElement('div');
+            imageHost.className = "relative min-w-0 min-h-0 flex items-center justify-center bg-black/50 border border-white/10";
+            container.appendChild(imageHost);
 
             if (bestShot) {
                 // A. 显示图片
                 const img = document.createElement('img');
                 img.src = bestShot.img;
                 img.className = "w-full h-full shadow-lg border border-gray-800 object-contain";
-                container.appendChild(img);
+                imageHost.appendChild(img);
 
                 // B. 显示信息水印 (HTML覆盖层)
                 const infoOverlay = document.createElement('div');
@@ -4037,11 +4234,11 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                     <div>INTENSITY: ${Math.round(intensity/5)*5} KT</div>
                     ${bestShot.age !== targetAge ? `<div class="text-yellow-400 mt-1">Note: Showing nearest img (Req: T+${targetAge}H)</div>` : ''}
                 `;
-                container.appendChild(infoOverlay);
+                imageHost.appendChild(infoOverlay);
 
             } else {
                // C. 没有图片的空状态
-                container.innerHTML = `
+                imageHost.innerHTML = `
                     <div class="text-center text-slate-500">
                         <i class="fa-solid fa-satellite-dish text-6xl mb-4 opacity-50"></i>
                         <p class="text-xl font-bold">NO IMAGERY AVAILABLE</p>
@@ -4051,7 +4248,139 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
                 `;
             }
 
+            const diagnostics = buildSatelliteDiagnostics(targetCyclone, targetPoint, targetAge);
+            const productPanel = document.createElement('div');
+            productPanel.className = "min-w-0 overflow-y-auto bg-slate-950/95 border border-cyan-400/20 p-3 font-mono";
+            productPanel.innerHTML = `
+                <div class="flex items-start justify-between gap-2 border-b border-white/10 pb-2 mb-2">
+                    <div>
+                        <div class="text-[10px] font-black uppercase tracking-[0.25em] text-cyan-300">Satellite Data Stack</div>
+                        <div class="text-[9px] uppercase tracking-[0.18em] text-slate-500 mt-1">${escapeHtml(diagnostics.scene)}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[9px] uppercase tracking-[0.16em] text-slate-500">Confidence</div>
+                        <div class="text-lg font-black text-white">${diagnostics.confidence}%</div>
+                    </div>
+                </div>
+                <div class="space-y-1.5">
+                    ${diagnostics.rows.map(row => `
+                        <div class="border border-white/10 bg-white/[0.03] p-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-[10px] font-black text-cyan-100">${escapeHtml(row.label)}</span>
+                                <span class="text-[10px] font-black text-amber-100">${escapeHtml(row.value)}</span>
+                            </div>
+                            <div class="mt-1 text-[8px] uppercase tracking-[0.12em] text-slate-500">${escapeHtml(row.signal)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            container.appendChild(productPanel);
             contentArea.appendChild(container);
+        };
+
+        const showAnalysisDesk = () => {
+            updateTabStyles(tabAnalysis);
+            setCurrentMode('ANALYSIS');
+            currentCanvas = null;
+            const targetPoint = targetCyclone.track[renderIndex];
+            const targetHour = getTrackPointHour(renderIndex);
+            const key = getAnalysisKey(targetCyclone, targetHour);
+            const existing = state.playerAnalyses[key] || {};
+            const simWind = Math.round(Number(targetPoint?.[2] || targetCyclone.intensity || 0));
+            const simPressure = Number.isFinite(Number(targetPoint?.[10]))
+                ? Math.round(Number(targetPoint[10]))
+                : windToPressure(simWind, Number(targetPoint?.[5] || targetCyclone.circulationSize || 300), targetCyclone.basin || 'WPAC');
+            const simCategory = getCategory(simWind, false, targetCyclone.isExtratropical, targetCyclone.isSubtropical).shortName;
+            const renderRecon = (recon) => recon ? `
+                <div class="mt-3 border border-emerald-400/25 bg-emerald-950/20 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="text-[10px] font-black uppercase tracking-[0.24em] text-emerald-300">Recon Reanalysis</div>
+                        <div class="text-[9px] font-mono text-slate-500">${escapeHtml(new Date(recon.issued).toUTCString().replace('GMT', 'Z'))}</div>
+                    </div>
+                    <div class="mt-3 grid grid-cols-4 gap-2 font-mono">
+                        <div class="bg-black/35 border border-white/10 p-2"><div class="text-[9px] text-slate-500 uppercase">VMAX</div><div class="text-lg font-black text-white">${recon.vmax} kt</div></div>
+                        <div class="bg-black/35 border border-white/10 p-2"><div class="text-[9px] text-slate-500 uppercase">MSLP</div><div class="text-lg font-black text-cyan-100">${recon.mslp} hPa</div></div>
+                        <div class="bg-black/35 border border-white/10 p-2"><div class="text-[9px] text-slate-500 uppercase">Class</div><div class="text-lg font-black text-amber-100">${escapeHtml(recon.category)}</div></div>
+                        <div class="bg-black/35 border border-white/10 p-2"><div class="text-[9px] text-slate-500 uppercase">Fix</div><div class="text-xs font-black text-slate-100">${escapeHtml(recon.fix)}</div></div>
+                    </div>
+                    <div class="mt-2 text-[10px] font-mono text-slate-300">${escapeHtml(recon.method)}</div>
+                    <div class="mt-1 text-[10px] font-mono text-slate-500">${escapeHtml(recon.notes)}</div>
+                </div>
+            ` : `
+                <div class="mt-3 border border-white/10 bg-white/[0.03] p-3 text-[10px] font-mono uppercase tracking-[0.16em] text-slate-500">
+                    No recon reanalysis yet. Run recon to place an independent estimate below your analysis.
+                </div>
+            `;
+
+            contentArea.innerHTML = `
+                <div class="w-full h-full overflow-y-auto bg-slate-950 text-slate-100 p-4">
+                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-cyan-400/20 pb-3">
+                        <div>
+                            <div class="text-[10px] font-black uppercase tracking-[0.28em] text-cyan-300">Player Analysis Desk</div>
+                            <div class="mt-1 text-[10px] font-mono uppercase tracking-[0.16em] text-slate-500">T+${targetHour}H sim baseline: ${simWind} kt / ${simPressure} hPa / ${simCategory}</div>
+                        </div>
+                        <button id="runReconReanalysisButton" class="px-3 py-2 border border-emerald-400/35 bg-emerald-500/10 text-emerald-100 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-emerald-500/20 transition">
+                            <i class="fa-solid fa-plane-up mr-2"></i>Run Recon
+                        </button>
+                    </div>
+                    <div class="grid gap-3 md:grid-cols-[1fr_1.15fr]">
+                        <div class="border border-cyan-400/20 bg-black/30 p-3">
+                            <div class="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-300 mb-3">Your Analysis</div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label class="text-[9px] uppercase tracking-[0.16em] text-slate-500">VMAX KT<input id="playerAnalysisVmax" type="number" min="0" max="220" value="${escapeHtml(existing.vmax ?? simWind)}" class="mt-1 w-full bg-black border border-white/15 px-2 py-2 text-sm text-white font-mono outline-none focus:border-cyan-400"></label>
+                                <label class="text-[9px] uppercase tracking-[0.16em] text-slate-500">MSLP HPA<input id="playerAnalysisMslp" type="number" min="650" max="1035" value="${escapeHtml(existing.mslp ?? simPressure)}" class="mt-1 w-full bg-black border border-white/15 px-2 py-2 text-sm text-white font-mono outline-none focus:border-cyan-400"></label>
+                            </div>
+                            <label class="mt-2 block text-[9px] uppercase tracking-[0.16em] text-slate-500">Classification
+                                <input id="playerAnalysisClass" value="${escapeHtml(existing.classification ?? simCategory)}" maxlength="28" class="mt-1 w-full bg-black border border-white/15 px-2 py-2 text-sm text-white font-mono outline-none focus:border-cyan-400 uppercase">
+                            </label>
+                            <label class="mt-2 block text-[9px] uppercase tracking-[0.16em] text-slate-500">Notes
+                                <textarea id="playerAnalysisNotes" rows="8" class="mt-1 w-full bg-black border border-white/15 px-2 py-2 text-xs text-white font-mono outline-none focus:border-cyan-400 resize-none" placeholder="Write your own Dvorak, satellite, recon, or forecast reasoning...">${escapeHtml(existing.notes || '')}</textarea>
+                            </label>
+                            <button id="savePlayerAnalysisButton" class="mt-3 w-full py-2 border border-cyan-400/35 bg-cyan-500/10 text-cyan-100 text-[10px] font-black uppercase tracking-[0.22em] hover:bg-cyan-500/20 transition">
+                                Save Player Analysis
+                            </button>
+                            <div id="playerAnalysisSaveStatus" class="mt-2 text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">${existing.savedAt ? `Saved ${escapeHtml(new Date(existing.savedAt).toUTCString().replace('GMT', 'Z'))}` : 'Not saved yet'}</div>
+                        </div>
+                        <div class="border border-white/10 bg-black/25 p-3">
+                            <div class="text-[10px] font-black uppercase tracking-[0.24em] text-slate-300">Independent Products</div>
+                            <div class="mt-3 grid grid-cols-2 gap-2 text-[10px] font-mono">
+                                ${buildSatelliteDiagnostics(targetCyclone, targetPoint, targetHour).rows.slice(0, 8).map(row => `
+                                    <div class="border border-white/10 bg-white/[0.03] p-2">
+                                        <div class="text-cyan-100 font-black">${escapeHtml(row.label)}</div>
+                                        <div class="mt-1 text-amber-100">${escapeHtml(row.value)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            ${renderRecon(existing.recon)}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('savePlayerAnalysisButton')?.addEventListener('click', () => {
+                const record = {
+                    ...(state.playerAnalyses[key] || {}),
+                    vmax: Number(document.getElementById('playerAnalysisVmax')?.value || simWind),
+                    mslp: Number(document.getElementById('playerAnalysisMslp')?.value || simPressure),
+                    classification: String(document.getElementById('playerAnalysisClass')?.value || simCategory).toUpperCase(),
+                    notes: String(document.getElementById('playerAnalysisNotes')?.value || ''),
+                    savedAt: new Date().toISOString()
+                };
+                state.playerAnalyses = { ...(state.playerAnalyses || {}), [key]: record };
+                saveJsonMap(PLAYER_ANALYSIS_KEY, state.playerAnalyses);
+                const status = document.getElementById('playerAnalysisSaveStatus');
+                if (status) status.textContent = `Saved ${new Date(record.savedAt).toUTCString().replace('GMT', 'Z')}`;
+                playClick();
+            });
+
+            document.getElementById('runReconReanalysisButton')?.addEventListener('click', () => {
+                const previous = state.playerAnalyses[key] || {};
+                const recon = buildReconReanalysis(targetCyclone, targetPoint, targetHour);
+                state.playerAnalyses = { ...(state.playerAnalyses || {}), [key]: { ...previous, recon } };
+                saveJsonMap(PLAYER_ANALYSIS_KEY, state.playerAnalyses);
+                playUpgradeSound();
+                showAnalysisDesk();
+            });
         };
 
         const showSynopticChart = () => {
@@ -4390,6 +4719,7 @@ contentArea.innerHTML = `
         tabProb34.onclick = () => showProb(34);
         tabProb64.onclick = () => showProb(64);
         tabSatellite.onclick = showSatelliteImagery;
+        tabAnalysis.onclick = showAnalysisDesk;
         tabStation.onclick = showStationData;
 
         const saveBtn = document.getElementById('saveJtwcImage');

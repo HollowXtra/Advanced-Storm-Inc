@@ -614,14 +614,14 @@
             <span class="text-slate-600">/</span>
             <span class="text-amber-200">STT Ready</span>
             <span class="text-slate-600">/</span>
-            <span class="text-emerald-200">Alpha 1.0.3.12</span>
+            <span class="text-emerald-200">Alpha 1.0.3.13</span>
         </div>
 
         <section id="introScene" class="absolute inset-0 flex items-center px-5 md:px-14">
             <div class="max-w-3xl">
                 <div class="mb-5 inline-flex items-center gap-3 border border-cyan-300/30 bg-cyan-950/25 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.32em] text-cyan-200">
                     <span class="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.9)]"></span>
-                    Alpha 1.0.3.12 Basin Engine
+                    Alpha 1.0.3.13 Basin Engine
                 </div>
                 <h2 class="font-black italic leading-none tracking-tight text-6xl sm:text-7xl md:text-8xl">
                     STORM<span class="text-cyan-300">_</span>INC
@@ -651,7 +651,7 @@
                         </div>
                         <div class="border border-emerald-300/30 bg-emerald-950/25 px-3 py-2 text-right font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200">
                             <div>Build</div>
-                            <div class="text-white">1.0.3.12</div>
+                            <div class="text-white">1.0.3.13</div>
                         </div>
                     </div>
                     <div class="mb-4 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
@@ -945,6 +945,19 @@
                             <input type="checkbox" id="satelliteInsetCheckbox" class="accent-cyan-500 w-4 h-4 bg-transparent border-slate-600 rounded-none" checked>
                             <span class="text-slate-400 text-[10px] uppercase tracking-widest group-hover:text-cyan-400 transition-colors">Satellite Inset</span>
                         </label>
+
+                        <div class="bg-white/5 p-3 border border-white/5">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Naming List</div>
+                                <div id="nameListBasinLabel" class="text-[9px] font-mono text-cyan-300 uppercase">BASIN</div>
+                            </div>
+                            <textarea id="customNameListInput" rows="4" placeholder="One name per line or comma-separated" class="w-full bg-black border border-white/20 px-2 py-1 text-xs text-white font-mono outline-none focus:border-cyan-500 resize-none placeholder-slate-700"></textarea>
+                            <div class="grid grid-cols-2 gap-2 mt-2">
+                                <button id="saveNameListButton" class="bg-cyan-900/45 hover:bg-cyan-800 border border-cyan-500/30 text-cyan-100 text-[10px] font-bold py-1.5 uppercase tracking-wider transition">Save Names</button>
+                                <button id="resetNameListButton" class="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 text-[10px] font-bold py-1.5 uppercase tracking-wider transition">Use Default</button>
+                            </div>
+                            <div id="nameListStatus" class="mt-2 text-[9px] font-mono uppercase tracking-wider text-slate-500">Default basin list active</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1403,7 +1416,7 @@
             <div class="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                 <div>
                     <h2 class="text-xl font-black text-white italic uppercase tracking-tight">Game Saves</h2>
-                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.12</p>
+                    <p class="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Alpha 1.0.3.13</p>
                 </div>
                 <button id="closeSaveModal" class="text-slate-500 hover:text-white transition-colors text-xl" title="Close Saves">
                     <i class="fa-solid fa-xmark"></i>
@@ -2416,7 +2429,7 @@
             });
         }
     </script>
-    <script type="module" src="js/main.js?v=structure-maturity-v1"></script>
+    <script type="module" src="js/main.js?v=analysis-recon-v1"></script>
     <script type="module" src="js/satellite-view.js"></script>
 </body>
 </html>

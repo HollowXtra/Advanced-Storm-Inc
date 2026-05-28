@@ -1461,6 +1461,9 @@ function drawStormGlyph(container, projection, cyclone) {
     const eyeOpenFraction = Math.max(0, Math.min(1, finiteOr(structure.eyeOpenFraction, 1)));
     const eyeMaturity = Math.max(0, Math.min(1, finiteOr(structure.eyeMaturity, eyeOpenFraction)));
     const bandingMaturity = Math.max(0, Math.min(1, finiteOr(structure.bandingMaturity, intensity >= 96 ? 0.7 : 0.35)));
+    const coldCloudShield = Math.max(0, Math.min(1, finiteOr(structure.coldCloudShield, 0)));
+    const convectiveBurstiness = Math.max(0, Math.min(1, finiteOr(structure.convectiveBurstiness, 0)));
+    const microwaveRingScore = Math.max(0, Math.min(1, finiteOr(structure.microwaveRingScore, 0)));
     const fragmentation = Math.max(0, Math.min(1, finiteOr(structure.bandFragmentation, 0)));
     const coreRoundness = Math.max(0.25, Math.min(1.2, finiteOr(structure.coreRoundness, 0.75)));
     const asymmetry = Math.max(0, Math.min(1.8, finiteOr(structure.asymmetry, 0)));
@@ -1474,6 +1477,10 @@ function drawStormGlyph(container, projection, cyclone) {
         lopsided: { turn: 4.15, reach: 1.08, wobble: 1.44, width: 0.98, cdo: 0.98, stretch: 1.32, lobeCount: 5, offset: 0.18 },
         monsoon: { turn: 3.2, reach: 1.36, wobble: 1.5, width: 0.9, cdo: 1.24, stretch: 1.18, lobeCount: 7 },
         sheared: { turn: 2.85, reach: 1.34, wobble: 1.72, width: 0.82, cdo: 0.74, stretch: 1.55, lobeCount: 5, offset: 0.35 },
+        'curved-band': { turn: 5.15, reach: 1.16, wobble: 1.08, width: 0.94, cdo: 0.82, stretch: 1.08, lobeCount: 4, offset: 0.08 },
+        cdo: { turn: 3.9, reach: 0.72, wobble: 0.62, width: 1.04, cdo: 1.34, stretch: 1.08, lobeCount: 2 },
+        'embedded-eye': { turn: 4.7, reach: 0.9, wobble: 0.74, width: 1.08, cdo: 1.18, stretch: 1.0, lobeCount: 2 },
+        bursting: { turn: 3.65, reach: 1.02, wobble: 2.25, width: 0.86, cdo: 0.96, stretch: 1.28, lobeCount: 8, offset: 0.2 },
         'open-wave': { turn: 2.45, reach: 1.05, wobble: 1.95, width: 0.72, cdo: 0.58, stretch: 1.55, lobeCount: 3, offset: 0.3 }
     };
     const shape = shapeConfigs[shapeFamily] || shapeConfigs.classic;
@@ -1504,6 +1511,55 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("fill-opacity", shapeFamily === 'annular' ? 0 : Math.max(0.14, 0.32 - fragmentation * 0.14 + eyeClosing * 0.16 + immatureCore * 0.1))
             .attr("vector-effect", "non-scaling-stroke")
             .style("filter", "drop-shadow(0 0 7px rgba(186,230,253,0.30))");
+
+        if (coldCloudShield > 0.45) {
+            glyph.append("ellipse")
+                .attr("class", "storm-cdo-shield")
+                .attr("cx", coreX)
+                .attr("cy", coreY)
+                .attr("rx", Math.max(5.5, coreRx * (0.82 + coldCloudShield * 0.42)))
+                .attr("ry", Math.max(4.5, coreRy * (0.8 + coldCloudShield * 0.35)))
+                .attr("transform", `rotate(${(shapeSeed * 160 + phase * 12) * hemi})`)
+                .attr("fill", "#f8fafc")
+                .attr("fill-opacity", 0.08 + coldCloudShield * 0.12)
+                .attr("stroke", "#bfdbfe")
+                .attr("stroke-width", 0.8)
+                .attr("stroke-opacity", 0.14 + coldCloudShield * 0.18)
+                .attr("vector-effect", "non-scaling-stroke");
+        }
+    }
+
+    if (microwaveRingScore > 0.42 && intensity >= 64) {
+        glyph.append("circle")
+            .attr("class", "storm-microwave-ring")
+            .attr("r", radius * (0.28 + microwaveRingScore * 0.16))
+            .attr("fill", "none")
+            .attr("stroke", "#7dd3fc")
+            .attr("stroke-width", 1.15)
+            .attr("stroke-dasharray", eyeMaturity > 0.55 ? null : "2 2")
+            .attr("stroke-opacity", 0.18 + microwaveRingScore * 0.34)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    if (convectiveBurstiness > 0.42) {
+        const burstTotal = Math.round(2 + convectiveBurstiness * 5);
+        for (let i = 0; i < burstTotal; i++) {
+            const angle = baseAngle + i * Math.PI * 2 / burstTotal + shapeSeed * 2.5;
+            const burstRadius = radius * (0.2 + (i % 3) * 0.14 + convectiveBurstiness * 0.18);
+            glyph.append("ellipse")
+                .attr("class", "storm-convective-burst")
+                .attr("cx", Math.cos(angle) * burstRadius + coreX * 0.25)
+                .attr("cy", Math.sin(angle) * burstRadius + coreY * 0.25)
+                .attr("rx", radius * (0.08 + convectiveBurstiness * 0.05))
+                .attr("ry", radius * (0.045 + convectiveBurstiness * 0.035))
+                .attr("transform", `rotate(${angle * 180 / Math.PI + 28})`)
+                .attr("fill", i % 2 ? "#bae6fd" : "#ffffff")
+                .attr("fill-opacity", 0.16 + convectiveBurstiness * 0.22)
+                .attr("stroke", "#38bdf8")
+                .attr("stroke-width", 0.5)
+                .attr("stroke-opacity", 0.2 + convectiveBurstiness * 0.18)
+                .attr("vector-effect", "non-scaling-stroke");
+        }
     }
 
     const lobeCount = Math.max(0, Math.round((shape.lobeCount || 0) * (0.55 + bandingMaturity * 0.45)));

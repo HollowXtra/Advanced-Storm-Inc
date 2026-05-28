@@ -363,6 +363,9 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     const eyeOpenFraction = Math.max(0, Math.min(1, Number(structure?.eyeOpenFraction ?? 1)));
     const eyeMaturity = Math.max(0, Math.min(1, Number(structure?.eyeMaturity ?? eyeOpenFraction)));
     const bandingMaturity = Math.max(0, Math.min(1, Number(structure?.bandingMaturity ?? (intensityKnots >= 96 ? 0.7 : 0.35))));
+    const coldCloudShield = Math.max(0, Math.min(1, Number(structure?.coldCloudShield || 0)));
+    const convectiveBurstiness = Math.max(0, Math.min(1, Number(structure?.convectiveBurstiness || 0)));
+    const microwaveRingScore = Math.max(0, Math.min(1, Number(structure?.microwaveRingScore || 0)));
     const bandFragmentation = Math.max(0, Math.min(1, Number(structure?.bandFragmentation || 0)));
     const shapeFamily = structure?.shapeFamily || 'classic';
     target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
@@ -380,6 +383,9 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.distortion += (1 - bandingMaturity) * 0.12;
         target.asymStrength += (1 - bandingMaturity) * 0.2;
         target.centralMass += (1 - eyeMaturity) * 0.12;
+        target.centralMass += coldCloudShield * 0.08;
+        target.distortion += convectiveBurstiness * 0.08;
+        target.spiral += microwaveRingScore * 0.08;
         if (eyeMaturity < 0.18) {
             target.eye = Math.min(target.eye, -0.04);
         } else if (eyeMaturity < 0.48) {

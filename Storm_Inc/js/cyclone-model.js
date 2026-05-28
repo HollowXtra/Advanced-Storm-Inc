@@ -283,9 +283,52 @@ function calculateStormStructure(cyclone, totalShear = 0) {
 
     const bandFragmentation = clamp(shearShape * 0.62 + moistureShape * 0.42 + eyeClosing * 0.35 + (1 - bandingMaturity) * 0.28, 0, 1);
     const coreRoundness = clamp(1 - shearShape * 0.38 - moistureShape * 0.24 + bandingMaturity * 0.16 + (shapeFamily === 'annular' ? 0.22 : 0), 0.28, 1.15);
+    const coldCloudShield = clamp(
+        clamp((intensity - 28) / 68, 0, 1) * 0.42
+        + favorableCore * 0.34
+        + (1 - eyeMaturity) * clamp((intensity - 50) / 58, 0, 1) * 0.2
+        - shearShape * 0.12,
+        0,
+        1
+    );
+    const convectiveBurstiness = clamp(
+        (1 - bandingMaturity) * 0.35
+        + clamp(rapidDeepening6h / 20, 0, 0.28)
+        + moistureShape * 0.18
+        + shearShape * 0.12
+        + Math.sin((cyclone.age || 0) * 0.32 + shapeSeed * 6.28) * 0.08,
+        0,
+        1
+    );
+    const microwaveRingScore = clamp(
+        eyeMaturity * 0.42
+        + bandingMaturity * 0.32
+        + clamp((intensity - 74) / 48, 0, 0.24)
+        - shearShape * 0.12,
+        0,
+        1
+    );
+    const outflowChannels = clamp((humidity - 60) / 28, 0, 1) * clamp((24 - totalShear) / 24, 0, 1);
+
+    if (shapeFamily === 'classic') {
+        if (convectiveBurstiness > 0.58 && bandingMaturity < 0.45) {
+            shapeFamily = 'bursting';
+        } else if (coldCloudShield > 0.64 && eyeMaturity < 0.32 && intensity >= 50) {
+            shapeFamily = 'cdo';
+        } else if (microwaveRingScore > 0.46 && eyeMaturity < 0.62 && intensity >= 74) {
+            shapeFamily = 'embedded-eye';
+        } else if (bandingMaturity > 0.28 && bandingMaturity < 0.68 && intensity >= 34) {
+            shapeFamily = 'curved-band';
+        }
+    }
+
     const armCount = shapeFamily === 'monsoon' ? (bandingMaturity > 0.58 ? 5 : 4)
         : shapeFamily === 'open-wave' ? 2
         : shapeFamily === 'comma' ? 2
+        : shapeFamily === 'cdo' ? 2
+        : shapeFamily === 'embedded-eye' ? 3
+        : shapeFamily === 'curved-band' ? 3
+        : shapeFamily === 'bursting' ? 2
         : intensity >= 96 && bandingMaturity > 0.66 ? 4
         : intensity >= 50 && bandingMaturity > 0.32 ? 3
         : 2;
@@ -321,6 +364,11 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         eyeStatus,
         bandingMaturity,
         bandingStatus,
+        satelliteScene: shapeFamily,
+        coldCloudShield,
+        convectiveBurstiness,
+        microwaveRingScore,
+        outflowChannels,
         tropicalStormHours,
         hurricaneHours,
         cat2Hours,
@@ -866,6 +914,11 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
             eyeStatus: 'NO EYE',
             bandingMaturity: 0,
             bandingStatus: 'RAGGED BANDS',
+            satelliteScene: 'open-wave',
+            coldCloudShield: 0,
+            convectiveBurstiness: 0,
+            microwaveRingScore: 0,
+            outflowChannels: 0,
             tropicalStormHours: 0,
             hurricaneHours: 0,
             cat2Hours: 0,
@@ -1310,7 +1363,7 @@ export function calculateSteering(lon, lat, pressureSystemsObj, bias = { u: 0, v
     };
 }
 
-export function updateCycloneState(cyclone, pressureSystems, frontalZone, world, month, globalTemp, globalShearSetting, nameIndex) {
+export function updateCycloneState(cyclone, pressureSystems, frontalZone, world, month, globalTemp, globalShearSetting, nameIndex, activeNameLists = NAME_LISTS) {
     let updatedCyclone = { ...cyclone };
     updatedCyclone.age += 3;
     const isMedicane = isMedicaneBasin(updatedCyclone);
@@ -1848,7 +1901,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         updatedCyclone.investStatus = 'upgraded';
         updatedCyclone.investClosedHour = updatedCyclone.investClosedHour ?? updatedCyclone.age;
         const basinKey = updatedCyclone.basin || 'WPAC';
-        const list = NAME_LISTS[basinKey] || NAME_LISTS['WPAC'];
+        const list = activeNameLists?.[basinKey] || NAME_LISTS[basinKey] || NAME_LISTS['WPAC'];
         const safeIndex = nameIndex % list.length;
         updatedCyclone.name = list[safeIndex];
         console.log(`System upgraded to Tropical Storm ${updatedCyclone.name} (${basinKey})`);

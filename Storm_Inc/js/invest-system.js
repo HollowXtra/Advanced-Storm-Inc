@@ -5,6 +5,7 @@ const INVEST_BASIN_CODES = {
     WPAC: { code: 'WP', suffix: 'W' },
     MED: { code: 'ME', suffix: 'M' },
     FICT: { code: 'FI', suffix: 'F' },
+    FICT2: { code: 'FI', suffix: 'F' },
     NIO: { code: 'IO', suffix: 'B' },
     SIO: { code: 'SH', suffix: 'S' },
     SHEM: { code: 'SH', suffix: 'S' },

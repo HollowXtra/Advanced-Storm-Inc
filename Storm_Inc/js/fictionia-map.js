@@ -1,5 +1,8 @@
 export const FICTIONIA_BASIN = 'FICT';
+export const FICTIONIA2_BASIN = 'FICT2';
+export const FICTIONIA_BASINS = [FICTIONIA_BASIN, FICTIONIA2_BASIN];
 export const FICTIONIA_CREDIT = 'FICTIONIA MAP - CREDIT: diamondlife';
+export const FICTIONIA2_CREDIT = 'FICTIONIA2 MAP - CREDIT: diamondlife';
 export const FICTIONIA_CENTER = { lon: -112, lat: 28 };
 export const FICTIONIA_BOUNDS = {
     lon: { min: -148, max: -86 },
@@ -188,5 +191,13 @@ export function addFictioniaToWorld(world) {
 }
 
 export function isFictioniaBasin(basin) {
-    return basin === FICTIONIA_BASIN;
+    return FICTIONIA_BASINS.includes(basin);
+}
+
+export function isFictioniaTerrainBasin(basin) {
+    return basin === FICTIONIA2_BASIN;
+}
+
+export function getFictioniaCredit(basin) {
+    return isFictioniaTerrainBasin(basin) ? FICTIONIA2_CREDIT : FICTIONIA_CREDIT;
 }

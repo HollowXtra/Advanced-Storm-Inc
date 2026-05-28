@@ -7,7 +7,7 @@ import { calculateSteering, getWindVectorAt } from './cyclone-model.js';
 import { generatePathForecasts } from './forecast-models.js';
 import { getElevationAt, getLandStatus } from './terrain-data.js';
 import { CITY_DATA } from './city-data.js';
-import { FICTIONIA_BASIN, FICTIONIA_BOUNDS, FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_CREDIT, FICTIONIA_WATER_FEATURES, isFictioniaBasin } from './fictionia-map.js';
+import { FICTIONIA_BASIN, FICTIONIA2_BASIN, FICTIONIA_BOUNDS, FICTIONIA_CITIES, FICTIONIA_COUNTY_LINES, FICTIONIA_WATER_FEATURES, getFictioniaCredit, isFictioniaBasin, isFictioniaTerrainBasin } from './fictionia-map.js';
 
 const MAP_CITY_DATA = [...CITY_DATA, ...FICTIONIA_CITIES];
 const OCEAN_FILL = '#0a3a66';
@@ -21,6 +21,13 @@ const BASIN_RENDER_WINDOWS = {
     SATL: { lon: -24, lat: -18, lonSpan: 88, latSpan: 48 },
     MED: { lon: 16, lat: 36.5, lonSpan: 66, latSpan: 34 },
     [FICTIONIA_BASIN]: {
+        lon: (FICTIONIA_BOUNDS.lon.min + FICTIONIA_BOUNDS.lon.max) / 2,
+        lat: (FICTIONIA_BOUNDS.lat.min + FICTIONIA_BOUNDS.lat.max) / 2,
+        lonSpan: (FICTIONIA_BOUNDS.lon.max - FICTIONIA_BOUNDS.lon.min) + 12,
+        latSpan: (FICTIONIA_BOUNDS.lat.max - FICTIONIA_BOUNDS.lat.min) + 12,
+        fictionOnly: true
+    },
+    [FICTIONIA2_BASIN]: {
         lon: (FICTIONIA_BOUNDS.lon.min + FICTIONIA_BOUNDS.lon.max) / 2,
         lat: (FICTIONIA_BOUNDS.lat.min + FICTIONIA_BOUNDS.lat.max) / 2,
         lonSpan: (FICTIONIA_BOUNDS.lon.max - FICTIONIA_BOUNDS.lon.min) + 12,
@@ -216,7 +223,7 @@ function drawWarningMarkers(container, projection, warnings = []) {
         .style('pointer-events', 'none');
 }
 
-function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible) {
+function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible, activeBasin = FICTIONIA_BASIN) {
     const groups = staticLayer.selectAll('g.fictionia-details').data(visible ? [1] : []);
     groups.exit().remove();
     const group = groups.enter()
@@ -226,15 +233,19 @@ function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible
 
     if (!visible) return;
 
+    const terrainStyle = isFictioniaTerrainBasin(activeBasin);
     group.selectAll('path.fictionia-county-line')
         .data(FICTIONIA_COUNTY_LINES)
         .join('path')
         .attr('class', 'fictionia-county-line')
         .attr('d', pathGenerator)
         .attr('fill', 'none')
-        .attr('stroke', d => d.properties.kind === 'river' ? '#64748b' : '#8b949e')
-        .attr('stroke-width', d => d.properties.kind === 'river' ? 0.9 : 0.65)
-        .attr('stroke-opacity', d => d.properties.kind === 'river' ? 0.72 : 0.82)
+        .attr('stroke', d => {
+            if (!terrainStyle) return d.properties.kind === 'river' ? '#64748b' : '#8b949e';
+            return d.properties.kind === 'river' ? '#3b82f6' : '#111827';
+        })
+        .attr('stroke-width', d => d.properties.kind === 'river' ? (terrainStyle ? 1.15 : 0.9) : (terrainStyle ? 0.85 : 0.65))
+        .attr('stroke-opacity', d => d.properties.kind === 'river' ? (terrainStyle ? 0.8 : 0.72) : (terrainStyle ? 0.72 : 0.82))
         .attr('vector-effect', 'non-scaling-stroke')
         .style('pointer-events', 'none');
 
@@ -243,15 +254,15 @@ function drawFictioniaDetails(staticLayer, pathGenerator, width, height, visible
         .join('path')
         .attr('class', 'fictionia-water')
         .attr('d', pathGenerator)
-        .attr('fill', OCEAN_FILL)
-        .attr('stroke', '#f8fafc')
-        .attr('stroke-width', 0.75)
-        .attr('stroke-opacity', 0.95)
+        .attr('fill', terrainStyle ? '#74a9df' : OCEAN_FILL)
+        .attr('stroke', terrainStyle ? '#020617' : '#f8fafc')
+        .attr('stroke-width', terrainStyle ? 0.9 : 0.75)
+        .attr('stroke-opacity', terrainStyle ? 0.72 : 0.95)
         .attr('vector-effect', 'non-scaling-stroke')
         .style('pointer-events', 'none');
 
     group.selectAll('text.fictionia-credit')
-        .data([FICTIONIA_CREDIT])
+        .data([getFictioniaCredit(activeBasin)])
         .join('text')
         .attr('class', 'fictionia-credit')
         .attr('x', width - 18)
@@ -1486,6 +1497,7 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
     // 3. 气旋中心定位逻辑 (仅在 active 状态且有坐标时执行)
     const activeBasin = basin || cyclone?.basin || remoteCyclone?.basin || null;
     const showFictioniaDetails = isFictioniaBasin(activeBasin);
+    const showFictioniaTerrain = isFictioniaTerrainBasin(activeBasin);
     const focusCyclone = (cyclone && cyclone.status === 'active' && isFinite(cyclone.lon))
         ? cyclone
         : ((remoteCyclone && isFinite(remoteCyclone.lon) && isFinite(remoteCyclone.lat)) ? remoteCyclone : null);
@@ -1534,11 +1546,11 @@ export function drawMap(mapSvg, mapProjection, world, cyclone, options = {}) {
         .join("path")
         .attr("class", "land")
         .attr("d", pathGenerator)
-        .style("fill", d => d.properties?.fictionia ? "#030303" : null)
-        .style("stroke", d => d.properties?.fictionia ? "#f8fafc" : null)
-        .style("stroke-width", d => d.properties?.fictionia ? 0.95 : null)
-        .style("stroke-opacity", d => d.properties?.fictionia ? 0.98 : null);
-    drawFictioniaDetails(staticLayer, pathGenerator, width, height, showFictioniaDetails);
+        .style("fill", d => d.properties?.fictionia ? (showFictioniaTerrain ? "#064f16" : "#030303") : null)
+        .style("stroke", d => d.properties?.fictionia ? (showFictioniaTerrain ? "#020617" : "#f8fafc") : null)
+        .style("stroke-width", d => d.properties?.fictionia ? (showFictioniaTerrain ? 0.85 : 0.95) : null)
+        .style("stroke-opacity", d => d.properties?.fictionia ? (showFictioniaTerrain ? 0.82 : 0.98) : null);
+    drawFictioniaDetails(staticLayer, pathGenerator, width, height, showFictioniaDetails, activeBasin);
 
     cityLabelLayer.selectAll("*").remove();
     if (showCityLabels && profile.showCityLabels !== false) {
@@ -4540,7 +4552,7 @@ export function startNewsAnimation(canvas, worldData, cyclone, pathForecasts, ba
     const particles = [];
     
     // Common Vars
-    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
+    const basinMap = { 'WPAC': 'WP', 'EPAC': 'EP', 'NATL': 'AL', 'MED': 'ME', 'FICT': 'FI', 'FICT2': 'FI', 'NIO': 'IO', 'SHEM': 'SH', 'SIO': 'SH', 'SATL': 'SL' };
     const basinCode = basinMap[basin] || 'XX';
     const cycloneNumStr = String(simulationCount).padStart(2, '0');
     const displayName = cyclone.name ? cyclone.name.toUpperCase() : `${basinCode} ${cycloneNumStr}`;

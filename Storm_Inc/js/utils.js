@@ -68,6 +68,12 @@ export const NAME_LISTS = {
         'Aster', 'Brine', 'Caldera', 'Dovewind', 'Ember', 'Fable', 'Galeon', 'Harbor', 'Ivory', 'Juniper',
         'Kestrel', 'Lucent', 'Morrow', 'Nimbus', 'Orchid', 'Palisade', 'Quartz', 'Riven', 'Solace', 'Talon',
         'Umber', 'Velvet', 'Warden', 'Yarrow', 'Zephyr'
+    ],
+
+    'FICT2': [
+        'Aster', 'Brine', 'Caldera', 'Dovewind', 'Ember', 'Fable', 'Galeon', 'Harbor', 'Ivory', 'Juniper',
+        'Kestrel', 'Lucent', 'Morrow', 'Nimbus', 'Orchid', 'Palisade', 'Quartz', 'Riven', 'Solace', 'Talon',
+        'Umber', 'Velvet', 'Warden', 'Yarrow', 'Zephyr'
     ]
 };
 

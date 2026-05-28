@@ -166,7 +166,7 @@ function createMainWindow() {
             const simulationReady = !runSimulationSmoke || (
               clickedStart
               && (smokeMinAge <= 0 || (simulationAge >= smokeMinAge && activeMapInfo))
-              && (smokeMinIntensity <= 0 || Number(debugSnapshot.cycloneIntensity || 0) >= smokeMinIntensity)
+              && (smokeMinIntensity <= 0 || Math.max(Number(debugSnapshot.cycloneIntensity || 0), Number(debugSnapshot.cyclonePeakIntensity || 0)) >= smokeMinIntensity)
               && !document.getElementById('simulation-output')?.classList.contains('hidden')
               && !!document.getElementById('damageCounter')
               && !!document.getElementById('deathCounter')
@@ -180,6 +180,7 @@ function createMainWindow() {
               && !!document.getElementById('mpChatInput')
               && !!document.querySelector('#basinSelector option[value="MED"]')
               && !!document.querySelector('#basinSelector option[value="FICT"]')
+              && !!document.querySelector('#basinSelector option[value="FICT2"]')
               && !!document.getElementById('ohcCounter')
               && !!document.getElementById('parStatus')
               && !!document.getElementById('toggleSteeringButton')
@@ -223,6 +224,7 @@ function createMainWindow() {
               hasMultiplayerPanel: !!document.getElementById('multiplayerButton') && !!document.getElementById('mpChatInput'),
               hasMediterraneanBasin: !!document.querySelector('#basinSelector option[value="MED"]'),
               hasFictioniaBasin: !!document.querySelector('#basinSelector option[value="FICT"]'),
+              hasFictionia2Basin: !!document.querySelector('#basinSelector option[value="FICT2"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               simulationAge,
               smokeMinIntensity,

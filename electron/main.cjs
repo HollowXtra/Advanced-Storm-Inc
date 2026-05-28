@@ -216,6 +216,7 @@ function createMainWindow() {
               hasGameIntro: !!document.getElementById('gameIntroOverlay') && !!document.getElementById('introScene'),
               hasGameMenu: !!document.getElementById('mainMenuScene') && !!document.getElementById('menuStartButton'),
               hasMenuLofi: !!document.getElementById('menuLofiAudio') && !!document.getElementById('menuLofiButton'),
+              hasFeedbackDesk: !!document.getElementById('menuFeedbackDesk') && !!document.getElementById('menuFeedbackSendButton'),
               hasGenerateButton: !!generateButton,
               clickedStart,
               hasDamageCounter: !!document.getElementById('damageCounter'),

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storm-inc-shell-v21';
+const CACHE_NAME = 'storm-inc-shell-v22';
 const SHELL_ASSETS = [
   './TCM.html',
   './a.png',

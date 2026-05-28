@@ -796,6 +796,31 @@
                                 <div class="mt-1 font-bold">EWW</div>
                             </div>
                         </div>
+                        <div id="menuFeedbackDesk" class="mt-2 border-t border-white/10 pt-4">
+                            <div class="mb-3 flex items-center justify-between gap-3">
+                                <div>
+                                    <div class="text-[10px] font-mono font-bold uppercase tracking-[0.32em] text-rose-200">Feedback Desk</div>
+                                    <div id="menuFeedbackStatus" class="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-500">GitHub Issues</div>
+                                </div>
+                                <div class="flex h-10 w-10 items-center justify-center rounded-full border border-rose-300/25 bg-rose-950/25 text-rose-200">
+                                    <i class="fa-solid fa-code-branch"></i>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="menuFeedbackBugButton" class="menu-button rounded-lg border border-red-300/50 bg-red-950/30 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-100 transition hover:border-red-200">
+                                    <i class="fa-solid fa-bug mr-2"></i>Bug
+                                </button>
+                                <button id="menuFeedbackSuggestionButton" class="menu-button rounded-lg border border-white/12 bg-black/30 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-200 transition hover:border-emerald-300/60 hover:text-emerald-100">
+                                    <i class="fa-solid fa-lightbulb mr-2"></i>Suggestion
+                                </button>
+                            </div>
+                            <input id="menuFeedbackTitle" maxlength="120" placeholder="TITLE..." class="mt-3 h-10 w-full rounded-lg border border-white/15 bg-black/45 px-3 text-xs font-mono text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-rose-300">
+                            <textarea id="menuFeedbackDetails" maxlength="4000" rows="4" placeholder="WHAT HAPPENED OR WHAT SHOULD BE ADDED..." class="mt-2 w-full resize-none rounded-lg border border-white/15 bg-black/45 px-3 py-2 text-xs font-mono text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-rose-300"></textarea>
+                            <button id="menuFeedbackSendButton" class="menu-button mt-2 flex w-full items-center justify-between rounded-lg border border-rose-300/35 bg-rose-950/30 px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-rose-100 transition hover:border-rose-200 hover:text-white">
+                                <span><i class="fa-brands fa-github mr-2"></i>Send to GitHub</span>
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2584,7 +2609,7 @@
             });
         }
     </script>
-    <script type="module" src="js/main.js?v=eyewall-dynamics-v1"></script>
+    <script type="module" src="js/main.js?v=feedback-desk-v1"></script>
     <script type="module" src="js/satellite-view.js"></script>
 </body>
 </html>

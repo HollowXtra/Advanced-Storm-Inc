@@ -59,6 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const menuMonthSelector = document.getElementById('menuMonthSelector');
     const menuYearSelector = document.getElementById('menuYearSelector');
     const menuStatusText = document.getElementById('menuStatusText');
+    const menuFeedbackBugButton = document.getElementById('menuFeedbackBugButton');
+    const menuFeedbackSuggestionButton = document.getElementById('menuFeedbackSuggestionButton');
+    const menuFeedbackTitle = document.getElementById('menuFeedbackTitle');
+    const menuFeedbackDetails = document.getElementById('menuFeedbackDetails');
+    const menuFeedbackSendButton = document.getElementById('menuFeedbackSendButton');
+    const menuFeedbackStatus = document.getElementById('menuFeedbackStatus');
     const sfxButton = document.getElementById('sfxButton');
     const sfxIcon = sfxButton.querySelector('i');
     const multiplayerButton = document.getElementById('multiplayerButton');
@@ -196,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentCalendarYear = new Date().getFullYear();
     const SIM_YEAR_MIN = 1851;
     const SIM_YEAR_MAX = 2200;
+    const GITHUB_ISSUE_URL = 'https://github.com/HollowXtra/Advanced-Storm-Inc/issues/new';
     const stats = new Stats();
     const musicTracks = [
         "WPAC - Barotropic.m4a",
@@ -559,6 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let introMenuTimer = null;
+    let menuFeedbackType = 'bug';
 
     function syncMenuControlsFromMain() {
         if (menuBasinSelector && basinSelector) menuBasinSelector.value = basinSelector.value || 'WPAC';
@@ -607,6 +615,98 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function setMenuFeedbackType(type = 'bug') {
+        menuFeedbackType = type === 'suggestion' ? 'suggestion' : 'bug';
+        const activeClass = menuFeedbackType === 'bug'
+            ? 'border-red-300/50 bg-red-950/30 text-red-100 hover:border-red-200'
+            : 'border-emerald-300/50 bg-emerald-950/30 text-emerald-100 hover:border-emerald-200';
+        const inactiveClass = 'border-white/12 bg-black/30 text-slate-200 hover:border-cyan-300/60 hover:text-cyan-100';
+        if (menuFeedbackBugButton) {
+            menuFeedbackBugButton.className = `menu-button rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition ${menuFeedbackType === 'bug' ? activeClass : inactiveClass}`;
+        }
+        if (menuFeedbackSuggestionButton) {
+            menuFeedbackSuggestionButton.className = `menu-button rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition ${menuFeedbackType === 'suggestion' ? activeClass : inactiveClass}`;
+        }
+        if (menuFeedbackTitle) {
+            menuFeedbackTitle.placeholder = menuFeedbackType === 'bug' ? 'BUG TITLE...' : 'SUGGESTION TITLE...';
+        }
+        if (menuFeedbackDetails) {
+            menuFeedbackDetails.placeholder = menuFeedbackType === 'bug'
+                ? 'WHAT BROKE, WHAT WERE YOU DOING, AND WHAT SHOULD HAVE HAPPENED...'
+                : 'WHAT SHOULD BE ADDED OR CHANGED...';
+        }
+        if (menuFeedbackStatus) {
+            menuFeedbackStatus.textContent = menuFeedbackType === 'bug' ? 'Bug report' : 'Suggestion';
+            menuFeedbackStatus.className = `mt-1 text-[10px] font-mono uppercase tracking-[0.18em] ${menuFeedbackType === 'bug' ? 'text-red-200' : 'text-emerald-200'}`;
+        }
+    }
+
+    function buildMenuFeedbackBody(title, details) {
+        const cyclone = state.cyclone || {};
+        const structure = cyclone.stormStructure || {};
+        const activeStorm = cyclone.status === 'active';
+        const stormLine = activeStorm
+            ? `${cyclone.name || cyclone.investDisplayId || cyclone.investId || 'Unnamed'} / ${Math.round(Number(cyclone.intensity || 0))} kt / ${Math.round(Number(cyclone.pressure || 0)) || '--'} hPa`
+            : 'No active storm';
+        const positionLine = activeStorm
+            ? `${formatLatitude(Number(cyclone.lat || 0))}, ${formatLongitude(Number(cyclone.lon || 0))}`
+            : '--';
+        const issueType = menuFeedbackType === 'bug' ? 'Bug report' : 'Suggestion';
+        const cleanDetails = details.trim() || '_No details entered._';
+        return [
+            `### ${issueType}`,
+            cleanDetails,
+            '',
+            '### Game Context',
+            `- Build: Alpha 1.0.3.14`,
+            `- Page: ${window.location.href}`,
+            `- Basin: ${basinSelector?.value || cyclone.basin || 'WPAC'}`,
+            `- Month: ${monthSelector?.value || state.currentMonth || '--'}`,
+            `- Year: ${getActiveSimulationYear(cyclone)}`,
+            `- Storm: ${stormLine}`,
+            `- Position: ${positionLine}`,
+            `- Sim hour: T+${Math.round(Number(cyclone.age || 0))}h`,
+            `- Core stage: ${structure.coreStageStatus || structure.eyeStatus || 'N/A'}`,
+            `- Browser: ${navigator.userAgent}`,
+            '',
+            '### Player Title',
+            title.trim()
+        ].join('\n');
+    }
+
+    function sendMenuFeedbackToGitHub() {
+        const title = (menuFeedbackTitle?.value || '').trim();
+        const details = (menuFeedbackDetails?.value || '').trim();
+        if (!title) {
+            if (menuFeedbackStatus) {
+                menuFeedbackStatus.textContent = 'Title required';
+                menuFeedbackStatus.className = 'mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-amber-200';
+            }
+            menuFeedbackTitle?.focus();
+            playError();
+            return;
+        }
+        const prefix = menuFeedbackType === 'bug' ? '[Bug]' : '[Suggestion]';
+        const labels = menuFeedbackType === 'bug' ? 'bug' : 'enhancement';
+        const params = new URLSearchParams({
+            title: `${prefix} ${title}`,
+            body: buildMenuFeedbackBody(title, details),
+            labels
+        });
+        const issueUrl = `${GITHUB_ISSUE_URL}?${params.toString()}`;
+        const opened = window.open(issueUrl, '_blank');
+        if (opened) {
+            opened.opener = null;
+        } else {
+            window.location.href = issueUrl;
+        }
+        if (menuFeedbackStatus) {
+            menuFeedbackStatus.textContent = opened ? 'GitHub draft opened' : 'Redirecting to GitHub';
+            menuFeedbackStatus.className = 'mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-cyan-200';
+        }
+        playClick();
+    }
+
     function updateMenuLofiStatus(text) {
         if (menuLofiStatus) menuLofiStatus.textContent = text;
     }
@@ -639,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(introMenuTimer);
         syncMenuControlsFromMain();
         updateGameMenuState();
+        setMenuFeedbackType(menuFeedbackType);
         if (currentMenuLofiIndex < 0) shuffleMenuLofi(false);
         gameIntroOverlay.classList.remove('game-shell-hidden');
         introScene.classList.add('hidden');
@@ -3191,6 +3292,15 @@ const cycloneNum = String(state.simulationCount).padStart(2, '0');
         hideGameMenu();
         helpButton?.click();
     });
+    if (menuFeedbackBugButton) menuFeedbackBugButton.addEventListener('click', () => {
+        playClick();
+        setMenuFeedbackType('bug');
+    });
+    if (menuFeedbackSuggestionButton) menuFeedbackSuggestionButton.addEventListener('click', () => {
+        playClick();
+        setMenuFeedbackType('suggestion');
+    });
+    if (menuFeedbackSendButton) menuFeedbackSendButton.addEventListener('click', sendMenuFeedbackToGitHub);
     if (menuLofiButton) menuLofiButton.addEventListener('click', () => {
         playClick();
         shuffleMenuLofi(true);

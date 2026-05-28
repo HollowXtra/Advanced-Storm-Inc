@@ -156,6 +156,32 @@ const fragmentShaderSource = `
                                  * inner_band_zone
                                  * (0.5 + 0.5 * fbm(noise_uv * 3.0 + 2.0));
         noise_val += feeder_bands + inner_curved_bands * 0.075;
+
+        float wrap_score = smoothstep(0.09, 0.34, u_central_mass_size + u_rain_shield * 0.24 + max(u_eye_radius, 0.0) * 1.4);
+        float core_wrap_radius = max(0.045, abs(u_eye_radius) + 0.04 + u_central_mass_size * 0.08);
+        float core_wrap_width = mix(0.014, 0.032, wrap_score);
+        float eyewall_radial = exp(-pow((dist - core_wrap_radius) / core_wrap_width, 2.0));
+        float eyewall_arc_phase = spiral_angle * 9.0 + dist * 42.0 - u_time * 0.95 * u_hemisphere;
+        float eyewall_arc_gate = 0.48 + 0.52 * pow(max(0.0, 0.5 + 0.5 * cos(eyewall_arc_phase)), 1.45);
+        float eyewall_filament_phase = spiral_angle * 18.0 + dist * 74.0 - u_time * 1.35 * u_hemisphere;
+        float eyewall_filaments = pow(max(0.0, 0.5 + 0.5 * cos(eyewall_filament_phase)), 6.0);
+        float wrap_texture = 0.58 + 0.42 * fbm(noise_uv * 3.8 + vec2(u_time * 0.12, -u_time * 0.08));
+        float eyewall_wrap = eyewall_radial
+                           * wrap_score
+                           * wrap_texture
+                           * (0.58 * eyewall_arc_gate + 0.42 * eyewall_filaments)
+                           * (1.0 - smoothstep(dynamic_storm_radius * 0.62, dynamic_storm_radius + 0.1, dist));
+
+        float moat_radius = core_wrap_radius + 0.048 + u_rain_shield * 0.035;
+        float moat_ring = exp(-pow((dist - moat_radius) / 0.035, 2.0)) * wrap_score;
+        float moat_arc_phase = spiral_angle * 7.0 + dist * 28.0 + u_time * 0.45 * u_hemisphere;
+        float moat_arc_gate = pow(max(0.0, 0.5 + 0.5 * cos(moat_arc_phase)), 2.8);
+        float wrapping_inflow = moat_ring
+                              * moat_arc_gate
+                              * (0.5 + 0.5 * fbm(noise_uv * 2.7 + 7.0))
+                              * (0.62 + 0.38 * smoothstep(-0.65, 0.85, asym_factor));
+        noise_val = max(noise_val, eyewall_wrap * 0.86);
+        noise_val += wrapping_inflow * 0.12;
         
         // 3. 中心云团 (CDO)
         float central_mass_value = 0.0;
@@ -204,7 +230,9 @@ const fragmentShaderSource = `
 
         noise_val = max(noise_val, central_mass_value * 0.86);
         noise_val = max(noise_val, outer_eyewall * 0.92);
+        noise_val = max(noise_val, eyewall_wrap * 0.9);
         noise_val += rain_canopy * 0.2;
+        noise_val += wrapping_inflow * 0.08;
         float cloud_texture_gate = 0.82 + 0.18 * fbm(noise_uv * 2.4 + u_time * 0.2);
         noise_val *= cloud_texture_gate;
         noise_val = min(noise_val, 0.94);

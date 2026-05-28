@@ -118,7 +118,7 @@ const fragmentShaderSource = `
         float noise_val = fbm(noise_uv + u_random_seed);
 
         // --- 密度不对称增强 (让延伸侧云层稍厚) ---
-        float density_boost = smoothstep(-0.5, 1.0, asym_factor) * u_asym_strength * 0.2;
+        float density_boost = smoothstep(-0.5, 1.0, asym_factor) * u_asym_strength * 0.12;
         noise_val += density_boost;
 
         // 2. 风眼与边缘
@@ -146,7 +146,7 @@ const fragmentShaderSource = `
             float cdo_dist = length(cdo_uv);
             float cdo_angle = atan(cdo_uv.y, cdo_uv.x);
             
-            float central_mass_outer_radius = u_eye_radius + u_central_mass_size;
+            float central_mass_outer_radius = u_eye_radius + min(u_central_mass_size, 0.22);
             vec2 boundary_noise_uv = cdo_uv * 6.0 + u_time * 0.3;
             float boundary_perturbation = fbm(boundary_noise_uv) * total_distortion_amplitude;
 
@@ -166,8 +166,13 @@ const fragmentShaderSource = `
             central_mass_internal_noise_coords.x = cos(central_mass_internal_angle) * cdo_dist - u_wind_shear_strength;
             central_mass_internal_noise_coords.y = sin(central_mass_internal_angle) * cdo_dist - u_wind_shear_strength;
             
-            float internal_texture = fbm(central_mass_internal_noise_coords * 6.0);
-            central_mass_value = central_mass_shape * (0.85 + internal_texture * 0.15);
+            float internal_texture = fbm(central_mass_internal_noise_coords * 7.5);
+            float dry_slot_texture = fbm(central_mass_internal_noise_coords * 15.0 + u_time * 0.12);
+            float radial_texture = 0.68 + internal_texture * 0.22 + dry_slot_texture * 0.12;
+            float eye_moat = smoothstep(perturbed_inner_radius + 0.02, perturbed_inner_radius + 0.11, cdo_dist);
+            float outer_taper = 1.0 - smoothstep(perturbed_outer_radius - 0.08, perturbed_outer_radius + 0.16, cdo_dist);
+            float ring_focus = max(0.36, eye_moat * outer_taper);
+            central_mass_value = central_mass_shape * radial_texture * ring_focus;
         }
         
         float outer_eyewall = exp(-pow((dist - u_outer_eyewall_radius) / 0.035, 2.0))
@@ -177,10 +182,14 @@ const fragmentShaderSource = `
                           * (1.0 - smoothstep(dynamic_storm_radius * 0.58, dynamic_storm_radius + 0.32, dist))
                           * (0.35 + 0.65 * fbm(noise_uv * 0.8 + 4.0));
 
-        noise_val = max(noise_val, central_mass_value);
-        noise_val = max(noise_val, outer_eyewall);
+        noise_val = max(noise_val, central_mass_value * 0.86);
+        noise_val = max(noise_val, outer_eyewall * 0.92);
         noise_val += rain_canopy * 0.18;
+        float cloud_texture_gate = 0.82 + 0.18 * fbm(noise_uv * 2.4 + u_time * 0.2);
+        noise_val *= cloud_texture_gate;
+        noise_val = min(noise_val, 0.94);
         float cloud_intensity = smoothstep(u_cloud_low, u_cloud_high, noise_val);
+        cloud_intensity = min(cloud_intensity, 0.965);
         vec3 color = nrl_color_ramp(cloud_intensity);
         float ir_val = max(0.1, pow(cloud_intensity*1.3, 1.2));
         vec3 grayColor = vec3(ir_val);
@@ -388,8 +397,8 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.spiral *= 0.64 + bandingMaturity * 0.4;
         target.distortion += (1 - bandingMaturity) * 0.12;
         target.asymStrength += (1 - bandingMaturity) * 0.2;
-        target.centralMass += (1 - eyeMaturity) * 0.12;
-        target.centralMass += coldCloudShield * 0.08;
+        target.centralMass += (1 - eyeMaturity) * 0.08;
+        target.centralMass += coldCloudShield * 0.045;
         target.distortion += convectiveBurstiness * 0.08;
         target.spiral += microwaveRingScore * 0.08;
         if (eyeMaturity < 0.18) {
@@ -418,7 +427,7 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         if (eyeClosing > 0.45) {
             target.eye = Math.min(target.eye, -0.02 - eyeClosing * 0.07);
         }
-        target.centralMass += 0.1 + eyeClosing * 0.22;
+        target.centralMass += 0.07 + eyeClosing * 0.12;
         target.distortion += 0.04 + eyeClosing * 0.08;
         target.asymStrength += eyeClosing * 0.24;
     }
@@ -446,7 +455,7 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.stormRadius += 0.08;
     } else if (shapeFamily === 'hot-tower') {
         target.spiral += 0.18;
-        target.centralMass += 0.12 + hotTowerPotential * 0.12;
+        target.centralMass += 0.08 + hotTowerPotential * 0.08;
         target.distortion += 0.14 + hotTowerPotential * 0.16;
         target.asymStrength += 0.16 + hotTowerPotential * 0.24;
     } else if (shapeFamily === 'moat-ring') {
@@ -489,6 +498,11 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.spiral += eyewallSpinRate / 3600;
         target.distortion += (1 - eyewallIntegrity) * 0.08;
     }
+    if (intensityKnots >= 64 && !isExtratropical && !isSubtropical) {
+        target.centralMass = Math.min(target.centralMass, 0.24);
+        target.stormRadius = Math.min(target.stormRadius, 0.34);
+        target.cloudLow = Math.max(target.cloudLow, 0.16);
+    }
 
     // ============================================================
     // 2. 云量 (Cloud High) 核心计算逻辑
@@ -526,7 +540,7 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         // m = (1.35 - 0.45) / (40 - 95) = 0.9 / -55 ≈ -0.0163
         // 使用稍微平滑一点的系数 -0.013
         
-        target.cloudHigh = 2.1 - (effectiveHum * 0.015);
+        target.cloudHigh = Math.max(0.78, 2.1 - (effectiveHum * 0.013));
     }
 
     // 全局随机性

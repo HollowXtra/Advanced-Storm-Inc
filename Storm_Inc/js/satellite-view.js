@@ -359,6 +359,10 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     const pinholeScore = Math.max(0, Math.min(1, Number(structure?.pinholeScore || 0)));
     const secondaryEyewallKm = Number(structure?.secondaryEyewallRadiusKm || 0);
     const eyeKm = Number(structure?.eyeRadiusKm || 0);
+    const eyeClosing = Math.max(0, Math.min(1, Number(structure?.eyeClosing || 0)));
+    const eyeOpenFraction = Math.max(0, Math.min(1, Number(structure?.eyeOpenFraction ?? 1)));
+    const bandFragmentation = Math.max(0, Math.min(1, Number(structure?.bandFragmentation || 0)));
+    const shapeFamily = structure?.shapeFamily || 'classic';
     target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
 
     if (pinholeScore > 0.55 && intensityKnots >= 96) {
@@ -381,6 +385,45 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
         target.outerEyewallStrength = Math.max(0.0, 0.55 * (1 - ercProgress));
         target.eye = Math.max(target.eye, 0.035 + ercProgress * 0.035);
         target.stormRadius += 0.04;
+    }
+
+    if (eyeClosing > 0.05 && intensityKnots >= 64) {
+        target.eye = Math.max(-0.1, target.eye * Math.max(0.05, eyeOpenFraction * 0.72));
+        if (eyeClosing > 0.45) {
+            target.eye = Math.min(target.eye, -0.02 - eyeClosing * 0.07);
+        }
+        target.centralMass += 0.1 + eyeClosing * 0.22;
+        target.distortion += 0.04 + eyeClosing * 0.08;
+        target.asymStrength += eyeClosing * 0.24;
+    }
+
+    if (shapeFamily === 'annular') {
+        target.spiral *= 0.78;
+        target.stormRadius += 0.05;
+        target.distortion *= 0.62;
+        target.centralMass += 0.08;
+    } else if (shapeFamily === 'compact') {
+        target.spiral += 0.22;
+        target.stormRadius -= 0.04;
+        target.distortion *= 0.72;
+    } else if (shapeFamily === 'comma' || shapeFamily === 'sheared') {
+        target.spiral *= 0.9;
+        target.asymStrength += 0.48;
+        target.distortion += 0.18;
+        target.stormRadius += 0.04;
+    } else if (shapeFamily === 'ragged' || shapeFamily === 'lopsided') {
+        target.asymStrength += 0.22 + bandFragmentation * 0.34;
+        target.distortion += 0.1 + bandFragmentation * 0.18;
+    } else if (shapeFamily === 'monsoon') {
+        target.stormRadius += 0.12;
+        target.spiral *= 0.82;
+        target.centralMass -= 0.04;
+        target.asymStrength += 0.18;
+    } else if (shapeFamily === 'open-wave') {
+        target.spiral *= 0.7;
+        target.centralMass -= 0.06;
+        target.asymStrength += 0.36;
+        target.distortion += 0.18;
     }
 
     // ============================================================

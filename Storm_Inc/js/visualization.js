@@ -1339,21 +1339,96 @@ function drawStormGlyph(container, projection, cyclone) {
         return;
     }
 
+    const finiteOr = (value, fallback) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const shapeFamily = structure.shapeFamily || 'classic';
+    const shapeSeed = Math.max(0, Math.min(0.999, finiteOr(structure.shapeSeed, 0.5)));
+    const eyeClosing = Math.max(0, Math.min(1, finiteOr(structure.eyeClosing, 0)));
+    const eyeOpenFraction = Math.max(0, Math.min(1, finiteOr(structure.eyeOpenFraction, 1)));
+    const fragmentation = Math.max(0, Math.min(1, finiteOr(structure.bandFragmentation, 0)));
+    const coreRoundness = Math.max(0.25, Math.min(1.2, finiteOr(structure.coreRoundness, 0.75)));
+    const asymmetry = Math.max(0, Math.min(1.8, finiteOr(structure.asymmetry, 0)));
+    const configuredArms = Math.max(2, Math.min(6, Math.round(finiteOr(structure.armCount, armCount))));
+    const shapeConfigs = {
+        classic: { turn: 4.8, reach: 0.95, wobble: 1.0, width: 1.0, cdo: 1.0, stretch: 1.0, lobeCount: 3 },
+        compact: { turn: 5.8, reach: 0.78, wobble: 0.65, width: 1.16, cdo: 0.78, stretch: 0.9, lobeCount: 2 },
+        annular: { turn: 4.25, reach: 0.82, wobble: 0.38, width: 1.08, cdo: 1.14, stretch: 0.96, lobeCount: 0 },
+        comma: { turn: 3.55, reach: 1.22, wobble: 1.36, width: 1.0, cdo: 0.86, stretch: 1.42, lobeCount: 4, offset: 0.22 },
+        ragged: { turn: 4.45, reach: 1.08, wobble: 1.82, width: 0.92, cdo: 0.92, stretch: 1.18, lobeCount: 6 },
+        lopsided: { turn: 4.15, reach: 1.08, wobble: 1.44, width: 0.98, cdo: 0.98, stretch: 1.32, lobeCount: 5, offset: 0.18 },
+        monsoon: { turn: 3.2, reach: 1.36, wobble: 1.5, width: 0.9, cdo: 1.24, stretch: 1.18, lobeCount: 7 },
+        sheared: { turn: 2.85, reach: 1.34, wobble: 1.72, width: 0.82, cdo: 0.74, stretch: 1.55, lobeCount: 5, offset: 0.35 },
+        'open-wave': { turn: 2.45, reach: 1.05, wobble: 1.95, width: 0.72, cdo: 0.58, stretch: 1.55, lobeCount: 3, offset: 0.3 }
+    };
+    const shape = shapeConfigs[shapeFamily] || shapeConfigs.classic;
     const line = d3.line()
         .x(d => d.x)
         .y(d => d.y)
-        .curve(d3.curveCatmullRom.alpha(0.65));
+        .curve(d3.curveCatmullRom.alpha(shapeFamily === 'ragged' ? 0.48 : 0.65));
+    const baseAngle = phase + shapeSeed * Math.PI * 2;
+    const shearAngle = baseAngle + hemi * (Math.PI * 0.42 + asymmetry * 0.35);
+    const stormOffset = shape.offset ? radius * shape.offset : 0;
+    const coreX = Math.cos(shearAngle) * stormOffset;
+    const coreY = Math.sin(shearAngle) * stormOffset;
 
-    for (let arm = 0; arm < armCount; arm++) {
+    if (intensity >= 34) {
+        const coreRx = radius * (0.34 + coreRoundness * 0.25) * shape.cdo * shape.stretch;
+        const coreRy = radius * (0.28 + coreRoundness * 0.23) * shape.cdo;
+        glyph.append("ellipse")
+            .attr("cx", coreX)
+            .attr("cy", coreY)
+            .attr("rx", Math.max(4.5, coreRx))
+            .attr("ry", Math.max(3.8, coreRy))
+            .attr("transform", `rotate(${(shapeSeed * 160 + phase * 12) * hemi})`)
+            .attr("fill", shapeFamily === 'annular' ? "none" : "#e0f2fe")
+            .attr("stroke", shapeFamily === 'annular' ? "#f8fafc" : cat.color)
+            .attr("stroke-width", shapeFamily === 'annular' ? 2 : 0.9)
+            .attr("stroke-opacity", shapeFamily === 'annular' ? 0.66 : 0.42)
+            .attr("fill-opacity", shapeFamily === 'annular' ? 0 : Math.max(0.14, 0.32 - fragmentation * 0.14 + eyeClosing * 0.16))
+            .attr("vector-effect", "non-scaling-stroke")
+            .style("filter", "drop-shadow(0 0 7px rgba(186,230,253,0.30))");
+    }
+
+    const lobeCount = Math.max(0, shape.lobeCount || 0);
+    for (let i = 0; i < lobeCount; i++) {
+        const angle = baseAngle + hemi * (i * Math.PI * 2 / Math.max(1, lobeCount) + shapeSeed * 1.7);
+        const lobeRange = radius * (0.34 + ((i + Math.round(shapeSeed * 5)) % 3) * 0.16 + asymmetry * 0.18);
+        const lobeSize = radius * (0.1 + fragmentation * 0.08 + (i % 2) * 0.03);
+        const bias = (shapeFamily === 'sheared' || shapeFamily === 'comma')
+            ? Math.max(0, Math.cos(angle - shearAngle)) * radius * 0.42
+            : 0;
+        glyph.append("ellipse")
+            .attr("cx", Math.cos(angle) * (lobeRange + bias))
+            .attr("cy", Math.sin(angle) * (lobeRange + bias))
+            .attr("rx", Math.max(2.3, lobeSize * (shapeFamily === 'monsoon' ? 1.4 : 1.0)))
+            .attr("ry", Math.max(1.8, lobeSize * (0.72 + coreRoundness * 0.24)))
+            .attr("transform", `rotate(${angle * 180 / Math.PI + 18})`)
+            .attr("fill", i % 2 === 0 ? "#f8fafc" : cat.color)
+            .attr("fill-opacity", 0.14 + (1 - fragmentation) * 0.12)
+            .attr("stroke", "#bae6fd")
+            .attr("stroke-width", 0.55)
+            .attr("stroke-opacity", 0.24)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    for (let arm = 0; arm < configuredArms; arm++) {
         const points = [];
-        for (let i = 0; i <= 28; i++) {
-            const t = i / 28;
-            const r = radius * (0.2 + t * 0.95);
-            const wobble = Math.sin(t * Math.PI * 3 + arm + phase) * (1.2 + structure.asymmetry * 1.7);
-            const angle = phase + hemi * (t * 4.8 + arm * (Math.PI * 2 / armCount));
+        const armBias = (shapeFamily === 'comma' || shapeFamily === 'sheared')
+            ? Math.max(0.25, Math.cos(arm * Math.PI * 2 / configuredArms - 0.35))
+            : 1;
+        for (let i = 0; i <= 30; i++) {
+            const t = i / 30;
+            const reach = shape.reach * (0.86 + armBias * 0.18);
+            const r = radius * (0.16 + t * reach);
+            const raggedPulse = Math.sin(t * Math.PI * (4 + fragmentation * 4) + arm * 1.7 + phase);
+            const wobble = raggedPulse * (1.1 + asymmetry * 1.8) * shape.wobble;
+            const angle = baseAngle + hemi * (t * shape.turn + arm * (Math.PI * 2 / configuredArms));
+            const shearPush = Math.max(0, Math.cos(angle - shearAngle)) * asymmetry * radius * 0.12;
             points.push({
-                x: Math.cos(angle) * (r + wobble),
-                y: Math.sin(angle) * (r + wobble)
+                x: Math.cos(angle) * (r + wobble + shearPush) + coreX * (1 - t) * 0.38,
+                y: Math.sin(angle) * (r + wobble + shearPush) + coreY * (1 - t) * 0.38
             });
         }
 
@@ -1361,19 +1436,22 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("d", line(points))
             .attr("fill", "none")
             .attr("stroke", arm % 2 === 0 ? "#e0f2fe" : cat.color)
-            .attr("stroke-width", intensity >= 64 ? 2.2 : 1.7)
+            .attr("stroke-width", (intensity >= 64 ? 2.2 : 1.7) * shape.width)
             .attr("stroke-linecap", "round")
-            .attr("stroke-opacity", intensity >= 34 ? 0.82 : 0.58)
+            .attr("stroke-dasharray", fragmentation > 0.6 && arm % 2 ? "5 3" : null)
+            .attr("stroke-opacity", (intensity >= 34 ? 0.82 : 0.58) * (1 - fragmentation * 0.22))
             .attr("vector-effect", "non-scaling-stroke")
             .style("filter", "drop-shadow(0 0 5px rgba(125,211,252,0.45))");
     }
 
-    glyph.append("circle")
-        .attr("r", radius * (intensity >= 64 ? 0.92 : 0.55))
+    glyph.append("ellipse")
+        .attr("rx", radius * (intensity >= 64 ? 0.92 : 0.55) * (shapeFamily === 'monsoon' ? 1.24 : shape.stretch))
+        .attr("ry", radius * (intensity >= 64 ? 0.86 : 0.5) * (shapeFamily === 'compact' ? 0.78 : 1))
+        .attr("transform", `rotate(${(shapeSeed * 190 + phase * 10) * hemi})`)
         .attr("fill", "none")
         .attr("stroke", cat.color)
         .attr("stroke-width", 1.25)
-        .attr("stroke-opacity", 0.42)
+        .attr("stroke-opacity", 0.32 + Math.max(0, 0.14 - fragmentation * 0.1))
         .attr("vector-effect", "non-scaling-stroke");
 
     if (structure.dualWindMaxima && structure.secondaryEyewallRadiusKm) {
@@ -1387,11 +1465,26 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("vector-effect", "non-scaling-stroke");
     }
 
-    const eyePx = intensity >= 64
-        ? Math.max(1.4, Math.min(7.5, (structure.eyeRadiusKm || 18) / 5.5))
+    const rawEyePx = intensity >= 64 && structure.eyeRadiusKm > 0
+        ? Math.max(1.4, Math.min(7.5, structure.eyeRadiusKm / 5.5))
         : 0;
+    const eyePx = rawEyePx * Math.max(0, eyeOpenFraction);
 
-    if (eyePx > 0) {
+    if (eyeClosing > 0.12 && intensity >= 64) {
+        glyph.append("ellipse")
+            .attr("class", "storm-eye-closing")
+            .attr("rx", Math.max(2.2, rawEyePx + eyeClosing * 3.2))
+            .attr("ry", Math.max(1.4, rawEyePx * Math.max(0.28, 1 - eyeClosing * 0.72)))
+            .attr("transform", `rotate(${(shapeSeed * 170 - 30) * hemi})`)
+            .attr("fill", "#e0f2fe")
+            .attr("fill-opacity", 0.18 + eyeClosing * 0.42)
+            .attr("stroke", "#bae6fd")
+            .attr("stroke-width", 0.8)
+            .attr("stroke-opacity", 0.42 + eyeClosing * 0.36)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
+
+    if (eyePx > 1.05 && eyeOpenFraction > 0.16 && eyeClosing < 0.72) {
         glyph.append("circle")
             .attr("class", "storm-eye")
             .attr("r", eyePx)
@@ -1402,9 +1495,9 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("vector-effect", "non-scaling-stroke");
     } else {
         glyph.append("circle")
-            .attr("r", 3.2)
-            .attr("fill", cat.color)
-            .attr("fill-opacity", 0.8);
+            .attr("r", intensity >= 64 ? 2.4 + eyeClosing * 1.2 : 3.2)
+            .attr("fill", eyeClosing > 0.2 ? "#e0f2fe" : cat.color)
+            .attr("fill-opacity", eyeClosing > 0.2 ? 0.68 : 0.8);
     }
 
     glyph.append("circle")

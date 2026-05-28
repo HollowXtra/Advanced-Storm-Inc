@@ -144,6 +144,16 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         : 0;
     const compactCore = clamp((intensity - 90) / 55, 0, 1) * clamp((ohc - 45) / 75, 0, 1) * clamp((78 - totalShear) / 78, 0, 1);
     const pinholeScore = ercActive ? 0 : compactCore * (humidity >= 68 ? 1 : 0.65);
+    const track = Array.isArray(cyclone.track) ? cyclone.track : [];
+    const previousFix = track.length ? track[track.length - 1] : null;
+    const sixHourFix = track.length >= 2 ? track[track.length - 2] : previousFix;
+    const previousIntensity = Number(previousFix?.[2] ?? intensity);
+    const sixHourIntensity = Number(sixHourFix?.[2] ?? previousIntensity);
+    const recentPeak = Math.max(
+        intensity,
+        previousIntensity,
+        ...track.slice(-6).map(point => Number(point?.[2] || 0))
+    );
 
     const eyeThreshold = isMedicane ? 48 : 64;
     let eyeRadiusKm = intensity >= eyeThreshold
@@ -170,6 +180,66 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         }
     }
 
+    const weakeningDelta6h = intensity - sixHourIntensity;
+    const wasHurricane = recentPeak >= eyeThreshold || previousIntensity >= eyeThreshold;
+    const postHurricaneFade = clamp((eyeThreshold - intensity) / 18, 0, 0.6);
+    const weakeningEyeClosure = wasHurricane
+        ? clamp(((-weakeningDelta6h - 2) / 22) + postHurricaneFade, 0, 1)
+        : 0;
+    const ercEyeClosure = cyclone.ercState === 'weakening' ? clamp(0.28 + ercProgress * 0.68, 0, 1) : 0;
+    const eyeClosing = clamp(Math.max(weakeningEyeClosure, ercEyeClosure), 0, 1);
+
+    if (eyeRadiusKm > 0 && eyeClosing > 0) {
+        eyeRadiusKm *= clamp(1 - eyeClosing * 1.12, 0, 1);
+        if (eyeClosing > 0.58 || intensity < eyeThreshold - 1) {
+            eyeRadiusKm = 0;
+        }
+    }
+
+    const eyeOpenFraction = eyeRadiusKm > 0
+        ? clamp(1 - eyeClosing, 0.06, 1)
+        : 0;
+    const seedSource = Number.isFinite(cyclone.visualShapeSeed)
+        ? cyclone.visualShapeSeed
+        : Math.abs(Math.sin(
+            Number(cyclone.motionPhase || 0) * 12.9898
+            + Number(cyclone.lon || 0) * 0.123
+            + Number(cyclone.lat || 0) * 0.371
+            + Number(cyclone.age || 0) * 0.003
+        ));
+    const shapeSeed = clamp(seedSource % 1, 0, 0.999);
+    const shearShape = clamp(totalShear / 35, 0, 1);
+    const moistureShape = clamp((72 - humidity) / 42, 0, 1);
+    const sizeShape = clamp((size - 360) / 330, 0, 1);
+    let shapeFamily = 'classic';
+
+    if (intensity < 34) {
+        shapeFamily = shapeSeed > 0.58 ? 'sheared' : 'open-wave';
+    } else if (cyclone.isSubtropical || cyclone.isExtratropical || cyclone.isTransitioning) {
+        shapeFamily = 'comma';
+    } else if (shearShape > 0.72 || moistureShape > 0.68) {
+        shapeFamily = shapeSeed > 0.42 ? 'ragged' : 'lopsided';
+    } else if (intensity >= 96 && pinholeScore > 0.58) {
+        shapeFamily = 'compact';
+    } else if (intensity >= 96 && totalShear < 13 && humidity > 76 && sizeShape > 0.28 && shapeSeed > 0.38) {
+        shapeFamily = 'annular';
+    } else if (sizeShape > 0.55 && intensity < 88) {
+        shapeFamily = 'monsoon';
+    } else if (shapeSeed > 0.76) {
+        shapeFamily = 'lopsided';
+    } else if (shapeSeed < 0.18 && intensity >= 50) {
+        shapeFamily = 'compact';
+    }
+
+    const bandFragmentation = clamp(shearShape * 0.62 + moistureShape * 0.42 + eyeClosing * 0.35, 0, 1);
+    const coreRoundness = clamp(1 - shearShape * 0.38 - moistureShape * 0.24 + (shapeFamily === 'annular' ? 0.22 : 0), 0.28, 1.15);
+    const armCount = shapeFamily === 'monsoon' ? 5
+        : shapeFamily === 'open-wave' ? 2
+        : shapeFamily === 'comma' ? 2
+        : intensity >= 96 ? 4
+        : intensity >= 50 ? 3
+        : 2;
+
     return {
         rmwKm,
         eyeRadiusKm,
@@ -178,6 +248,14 @@ function calculateStormStructure(cyclone, totalShear = 0) {
         pinholeScore,
         ercState: cyclone.ercState || 'none',
         ercProgress,
+        eyeClosing,
+        eyeOpenFraction,
+        weakeningDelta6h,
+        shapeFamily,
+        shapeSeed,
+        bandFragmentation,
+        coreRoundness,
+        armCount,
         asymmetry: clamp(totalShear / 40, 0, 1.3),
         rainShieldKm: cyclone.rainShieldKm || 0
     };
@@ -699,6 +777,14 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
             pinholeScore: 0,
             ercState: 'none',
             ercProgress: 0,
+            eyeClosing: 0,
+            eyeOpenFraction: 0,
+            weakeningDelta6h: 0,
+            shapeFamily: 'open-wave',
+            shapeSeed: 0,
+            bandFragmentation: 0,
+            coreRoundness: 0.7,
+            armCount: 2,
             asymmetry: 0,
             rainShieldKm: 0
         },
@@ -706,6 +792,7 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         r34: 0, r50: 0, r64: 0,
         motionWobble: (Math.random() - 0.5) * 4,
         motionPhase: Math.random() * Math.PI * 2,
+        visualShapeSeed: Math.random(),
         steerMemoryU: 0,
         steerMemoryV: 0,
         forecastLogs: {},

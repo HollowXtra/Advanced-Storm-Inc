@@ -436,7 +436,10 @@ export function initializeCyclone(world, month, basin = 'WPAC', globalTemp, glob
         upwellingCoolingEffect: 0,
         ohcKjCm2: 0,
         depth26M: 0,
+        sstC: 0,
         ohcLabel: 'open ocean',
+        waterFuelIndex: 0,
+        waterFuelBoostKt: 0,
         rainRateMmHr: 0,
         rainTotalMm: 0,
         maxRainRateMmHr: 0,
@@ -948,20 +951,25 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     const speedResponse = updatedCyclone.isExtratropical ? 0.36 : 0.18 + Math.min(0.2, Math.abs(updatedCyclone.lat) / 120);
     updatedCyclone.speed += (steeringSpeedKnots - updatedCyclone.speed) * speedResponse;
 
+    const ohcInfo = calculateOceanHeatContent(updatedCyclone.lat, updatedCyclone.lon, month, globalTemp);
+    const warmLayerBuffer = isMedicane
+        ? clamp((ohcInfo.depth26M - 16) / 62, 0, 0.62)
+        : clamp((ohcInfo.depth26M - 48) / 130, 0, 0.68);
+
     // Cold welling
     if (updatedCyclone.speed < 6) {
-        const coolingRate = (6 - updatedCyclone.speed) / 6 * 0.25; 
+        const coolingRate = (6 - updatedCyclone.speed) / 6 * 0.25 * (1 - warmLayerBuffer);
         updatedCyclone.upwellingCoolingEffect = Math.min(updatedCyclone.upwellingCoolingEffect + coolingRate, 5.0); 
     } else {
         updatedCyclone.upwellingCoolingEffect = Math.max(updatedCyclone.upwellingCoolingEffect - 0.2, 0); 
     }
 
-    const ohcInfo = calculateOceanHeatContent(updatedCyclone.lat, updatedCyclone.lon, month, globalTemp);
     let sst = getSST(updatedCyclone.lat, updatedCyclone.lon, month, globalTemp);
     sst -= updatedCyclone.upwellingCoolingEffect;
-    const upwellingHeatPenalty = updatedCyclone.upwellingCoolingEffect * 10;
+    const upwellingHeatPenalty = updatedCyclone.upwellingCoolingEffect * (isMedicane ? 7.5 : 10) * (1 - warmLayerBuffer * 0.72);
     updatedCyclone.ohcKjCm2 = Math.max(0, Math.round(ohcInfo.ohcKjCm2 - upwellingHeatPenalty));
-    updatedCyclone.depth26M = Math.max(0, Math.round(ohcInfo.depth26M - updatedCyclone.upwellingCoolingEffect * 4));
+    updatedCyclone.depth26M = Math.max(0, Math.round(ohcInfo.depth26M - updatedCyclone.upwellingCoolingEffect * (isMedicane ? 2.4 : 4) * (1 - warmLayerBuffer * 0.55)));
+    updatedCyclone.sstC = Number(sst.toFixed(1));
     updatedCyclone.ohcLabel = ohcInfo.label;
     
     // Transition
@@ -976,6 +984,27 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     const isNearLand = landStatus.isNearLand;
 
     updatedCyclone.isLand = isOverLand;
+    const sstFuel = isMedicane
+        ? clamp((sst - 17.4) / 7.5, 0, 1.15)
+        : clamp((sst - 25.8) / 4.1, 0, 1.25);
+    const ohcFuel = isMedicane
+        ? clamp((updatedCyclone.ohcKjCm2 - 8) / 62, 0, 1.12)
+        : clamp((updatedCyclone.ohcKjCm2 - 35) / 115, 0, 1.25);
+    const depthFuel = isMedicane
+        ? clamp((updatedCyclone.depth26M - 12) / 58, 0, 1.0)
+        : clamp((updatedCyclone.depth26M - 45) / 130, 0, 1.0);
+    const waterFuelIndex = clamp(sstFuel * 0.42 + ohcFuel * 0.42 + depthFuel * 0.16, 0, 1.3);
+    updatedCyclone.waterFuelIndex = isOverLand ? waterFuelIndex * 0.25 : waterFuelIndex;
+    updatedCyclone.waterFuelBoostKt = 0;
+    const coastalWaterFeed = !updatedCyclone.isExtratropical
+        && !updatedCyclone.isTransitioning
+        && terrainElevation < (isMedicane ? 80 : 150)
+        && sst >= (isMedicane ? 18.0 : 26.4)
+        && updatedCyclone.ohcKjCm2 >= (isMedicane ? 12 : 60)
+        && (isOverLand || isNearLand);
+    if (coastalWaterFeed) {
+        updatedCyclone.waterFuelIndex = Math.max(updatedCyclone.waterFuelIndex, waterFuelIndex * (isOverLand ? 0.72 : 0.9));
+    }
     const EXf = !updatedCyclone.isExtratropical ? 1 : 0.1;
     const genesisProtectionUntil = Number.isFinite(Number(updatedCyclone.genesisProtectionUntil))
         ? Number(updatedCyclone.genesisProtectionUntil)
@@ -993,16 +1022,26 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
     
     // 1. Terrain Decay
     if (terrainElevation > 0 && updatedCyclone.intensity > 45) {
-        let weakeningFactor = 0.88 + updatedCyclone.circulationSize*0.0001*EXf - (terrainElevation / 1200);
+        const warmTerrainBase = coastalWaterFeed ? 0.94 + clamp(waterFuelIndex * 0.035, 0, 0.05) : 0.88;
+        const terrainDivisor = coastalWaterFeed ? 1900 : 1200;
+        let weakeningFactor = warmTerrainBase + updatedCyclone.circulationSize*0.0001*EXf - (terrainElevation / terrainDivisor);
         const JPAdj = (updatedCyclone.lat >= 30 && updatedCyclone.lat <= 40 && updatedCyclone.lon >= 129 && updatedCyclone.lon <= 140) ? 0.03 : 0;
         updatedCyclone.intensity *= weakeningFactor + JPAdj;
+        if (coastalWaterFeed && totalShear < (isMedicane ? 28 : 25)) {
+            updatedCyclone.intensity += clamp(waterFuelIndex * 0.35, 0, 0.6);
+        }
         updatedCyclone.circulationSize *= 1 + terrainElevation * 0.0008;
 
     } else if (isOverLand || isNearLand) {
         const JPAdjustment = (updatedCyclone.lat >= 30 && updatedCyclone.lat <= 40 && updatedCyclone.lon >= 129 && updatedCyclone.lon <= 140) ? 0.04 : 0;
         const PHAdjustment = (updatedCyclone.lat >= 5 && updatedCyclone.lat <= 18 && updatedCyclone.lon >= 120 && updatedCyclone.lon <= 127 && updatedCyclone.intensity < 85) ? 0.05 : 0;
         const AUAdjustment = (updatedCyclone.lat >= -18 && updatedCyclone.lat <= -10 && updatedCyclone.lon >= 123 && updatedCyclone.lon <= 137) ? 0.05 : 0;
-        updatedCyclone.intensity *= 0.88 + updatedCyclone.circulationSize*0.0001*EXf + JPAdjustment + PHAdjustment + AUAdjustment;
+        const coastalDecayBase = coastalWaterFeed ? 0.95 : 0.88;
+        const coastalFeedAdjustment = coastalWaterFeed ? clamp(waterFuelIndex * 0.055, 0, 0.07) : 0;
+        updatedCyclone.intensity *= coastalDecayBase + updatedCyclone.circulationSize*0.0001*EXf + JPAdjustment + PHAdjustment + AUAdjustment + coastalFeedAdjustment;
+        if (coastalWaterFeed && totalShear < (isMedicane ? 30 : 27) && updatedCyclone.intensity < 50) {
+            updatedCyclone.intensity += 0.35 + clamp(waterFuelIndex * 0.35, 0, 0.55);
+        }
         updatedCyclone.speed *= 0.99;
 
     } else if (updatedCyclone.isExtratropical) {
@@ -1034,9 +1073,12 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
         }
 
         const ohcSupport = isMedicane
-            ? clamp((updatedCyclone.ohcKjCm2 - 12) / 55, -0.35, 0.38)
-            : clamp((updatedCyclone.ohcKjCm2 - 50) / 95, -0.45, 0.55);
-        mpi *= 1 + ohcSupport * (isMedicane ? 0.16 : 0.24);
+            ? clamp((updatedCyclone.ohcKjCm2 - 10) / 58, -0.28, 0.65)
+            : clamp((updatedCyclone.ohcKjCm2 - 35) / 115, -0.38, 0.85);
+        mpi *= 1 + ohcSupport * (isMedicane ? 0.28 : 0.42);
+        if (!isOverLand && updatedCyclone.waterFuelIndex > 0) {
+            mpi += updatedCyclone.waterFuelIndex * (isMedicane ? 5.5 : 11);
+        }
 
         // ERC Logic
         switch (updatedCyclone.ercState) {
@@ -1089,11 +1131,16 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
 
         // Growth Rate Logic
         let latF = (0.4 / Math.abs(updatedCyclone.lat) ** 2) * (updatedCyclone.intensity / 50);
-        let ri = Math.random() > 0.97 ? Math.random() * 0.35 - 0.05 : 0;
+        let ri = Math.random() > (0.97 - updatedCyclone.waterFuelIndex * 0.035)
+            ? Math.random() * (0.35 + updatedCyclone.waterFuelIndex * 0.22) - 0.04
+            : 0;
         let intensificationRate = Math.random() * (0.14 + ri) * Math.min(1, ((updatedCyclone.intensity - 13) / 65)) - latF; // [保留]
         if (isMedicane) {
             intensificationRate = Math.random() * (0.085 + ri * 0.45) * clamp((updatedCyclone.intensity - 14) / 48, 0.15, 1.0) + 0.012 - totalShear * 0.00055;
         }
+        intensificationRate += updatedCyclone.waterFuelIndex
+            * (isMedicane ? 0.014 : 0.022)
+            * clamp((updatedCyclone.intensity - 17) / 55, 0.22, 1.05);
 
         if (updatedCyclone.isMonsoonDepression) {
             intensificationRate *= (Math.random() + 0.10) * 0.70; 
@@ -1142,6 +1189,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             const sizeSensitivity = 600 - cyclone.circulationSize; 
             dryAirFactor = (60 - effectiveHumidity) * 0.0002 * sizeSensitivity;
         }
+        const shearFuel = isMedicane
+            ? clamp((36 - totalShear) / 30, 0, 1.1)
+            : clamp((32 - totalShear) / 30, 0, 1.1);
+        const humidityFuel = clamp((effectiveHumidity - 55) / 25, 0, 1.2);
+        const intensityGapFuel = clamp((mpi - updatedCyclone.intensity) / 75, 0, 1.2);
+        const stageFuel = updatedCyclone.intensity < 34 ? 0.85 : (updatedCyclone.intensity < 65 ? 0.62 : 0.38);
+        const waterFuelBoost = (!isOverLand && !updatedCyclone.isTransitioning)
+            ? updatedCyclone.waterFuelIndex * shearFuel * humidityFuel * intensityGapFuel * stageFuel
+            : 0;
+        updatedCyclone.waterFuelBoostKt = Number(waterFuelBoost.toFixed(2));
+        potentialChange += waterFuelBoost;
         const currentSize = updatedCyclone.circulationSize || 300;
         const clampedSize = Math.max(150, Math.min(500, currentSize));
         const sizeFactor = 1.2 + (clampedSize - 150) * (0.8 - 1.2) / (500 - 150);
@@ -1159,7 +1217,7 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
             const moistureSupport = Number(updatedCyclone.environmentHumidity || 0) >= 65;
             const shearLimit = isMedicane ? 30 : 26;
             if (!lowlandGraceActive && totalShear < shearLimit && (oceanSupport || moistureSupport)) {
-                updatedCyclone.intensity += 0.25;
+                updatedCyclone.intensity += 0.25 + clamp(updatedCyclone.waterFuelIndex * (isMedicane ? 0.45 : 0.65), 0, 0.85);
             }
         }
     }
@@ -1332,7 +1390,17 @@ export function updateCycloneState(cyclone, pressureSystems, frontalZone, world,
 
     const protectedFromEarlyDissipation = genesisGraceActive
         && ((isMedicane ? sst >= 16.5 : sst >= 24.5) || lowlandGraceActive);
-    if ((!protectedFromEarlyDissipation && updatedCyclone.intensity < 17) || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
+    const protectedByWarmWater = !updatedCyclone.isExtratropical
+        && !updatedCyclone.isTransitioning
+        && updatedCyclone.age < 120
+        && terrainElevation < (isMedicane ? 90 : 180)
+        && updatedCyclone.ohcKjCm2 >= (isMedicane ? 14 : 70)
+        && sst >= (isMedicane ? 18.0 : 27.0)
+        && (coastalWaterFeed || !isOverLand);
+    if (protectedByWarmWater && updatedCyclone.intensity < (isMedicane ? 17 : 18)) {
+        updatedCyclone.intensity = isMedicane ? 17 : 18;
+    }
+    if ((!protectedFromEarlyDissipation && !protectedByWarmWater && updatedCyclone.intensity < 17) || (updatedCyclone.isExtratropical && updatedCyclone.intensity < 24) || updatedCyclone.lat > 70 || updatedCyclone.lat < -70) {
         updatedCyclone.status = 'dissipated';
     }
     

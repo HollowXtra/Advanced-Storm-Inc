@@ -109,6 +109,9 @@ function createMainWindow() {
           const smokeBasin = ${JSON.stringify(process.env.STORM_INC_SMOKE_BASIN || '')};
           const smokeYear = ${JSON.stringify(process.env.STORM_INC_SMOKE_YEAR || '')};
           const smokeMinAge = ${JSON.stringify(Number(process.env.STORM_INC_SMOKE_MIN_AGE || (isSimulationSmokeTest ? 36 : 0)))};
+          const smokeLon = ${JSON.stringify(process.env.STORM_INC_SMOKE_LON || '')};
+          const smokeLat = ${JSON.stringify(process.env.STORM_INC_SMOKE_LAT || '')};
+          const smokeMinIntensity = ${JSON.stringify(Number(process.env.STORM_INC_SMOKE_MIN_INTENSITY || 0))};
           const smokeErrors = [];
           window.addEventListener('error', (event) => smokeErrors.push(event.message || String(event.error || event)));
           window.addEventListener('unhandledrejection', (event) => smokeErrors.push(String(event.reason || event)));
@@ -120,6 +123,14 @@ function createMainWindow() {
               || '';
             const match = text.match(/T\\+(\\d+)/i);
             return match ? Number(match[1]) : 0;
+          };
+          const setInputValue = (id, value) => {
+            if (value === '') return;
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
           };
 
           const check = () => {
@@ -146,6 +157,8 @@ function createMainWindow() {
                 const selector = document.getElementById('yearSelector');
                 if (selector) selector.value = smokeYear;
               }
+              setInputValue('customLonInput', smokeLon);
+              setInputValue('customLatInput', smokeLat);
               clickedStart = true;
               generateButton.click();
             }
@@ -153,6 +166,7 @@ function createMainWindow() {
             const simulationReady = !runSimulationSmoke || (
               clickedStart
               && (smokeMinAge <= 0 || (simulationAge >= smokeMinAge && activeMapInfo))
+              && (smokeMinIntensity <= 0 || Number(debugSnapshot.cycloneIntensity || 0) >= smokeMinIntensity)
               && !document.getElementById('simulation-output')?.classList.contains('hidden')
               && !!document.getElementById('damageCounter')
               && !!document.getElementById('deathCounter')
@@ -211,6 +225,7 @@ function createMainWindow() {
               hasFictioniaBasin: !!document.querySelector('#basinSelector option[value="FICT"]'),
               selectedBasin: document.getElementById('basinSelector')?.value || '',
               simulationAge,
+              smokeMinIntensity,
               survivedSmokeWindow: !runSimulationSmoke || (simulationAge >= smokeMinAge && activeMapInfo),
               hasOhcCounter: !!document.getElementById('ohcCounter'),
               hasParStatus: !!document.getElementById('parStatus'),

@@ -193,6 +193,11 @@ document.addEventListener('DOMContentLoaded', () => {
             cycloneLat: Number.isFinite(state.cyclone?.lat) ? state.cyclone.lat : null,
             cycloneLon: Number.isFinite(state.cyclone?.lon) ? state.cyclone.lon : null,
             cycloneIsLand: !!state.cyclone?.isLand,
+            cycloneSstC: Number(state.cyclone?.sstC || 0),
+            cycloneOhcKjCm2: Number(state.cyclone?.ohcKjCm2 || 0),
+            cycloneDepth26M: Number(state.cyclone?.depth26M || 0),
+            cycloneWaterFuelIndex: Number(state.cyclone?.waterFuelIndex || 0),
+            cycloneWaterFuelBoostKt: Number(state.cyclone?.waterFuelBoostKt || 0),
             simulationRunning: !!state.simulationInterval,
             visibleLandCount: document.querySelectorAll('.land').length
         })
@@ -1167,7 +1172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = '1.0.3.2';
+    const GAME_SAVE_PATCH_VERSION = '1.0.3.3';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 

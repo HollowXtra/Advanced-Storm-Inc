@@ -658,7 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cleanDetails,
             '',
             '### Game Context',
-            `- Build: Alpha 1.0.3.14`,
+            `- Build: Alpha 1.0.3.15`,
             `- Page: ${window.location.href}`,
             `- Basin: ${basinSelector?.value || cyclone.basin || 'WPAC'}`,
             `- Month: ${monthSelector?.value || state.currentMonth || '--'}`,
@@ -1455,7 +1455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.14';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.15';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 

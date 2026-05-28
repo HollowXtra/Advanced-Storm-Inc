@@ -136,6 +136,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const sttDelta = document.getElementById('sttDelta');
     const shearCounter = document.getElementById('shearCounter');
     const shearMeta = document.getElementById('shearMeta');
+    const eyeStatusCounter = document.getElementById('eyeStatusCounter');
+    const eyeMaturityCounter = document.getElementById('eyeMaturityCounter');
+    const bandingStatusCounter = document.getElementById('bandingStatusCounter');
+    const bandingMaturityCounter = document.getElementById('bandingMaturityCounter');
     const warningList = document.getElementById('warning-list');
     const warningCycle = document.getElementById('warning-cycle');
     const investIdCounter = document.getElementById('investIdCounter');
@@ -1279,7 +1283,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // --- 辅助函数 ---
-    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.11';
+    const GAME_SAVE_PATCH_VERSION = 'Alpha 1.0.3.12';
     const GAME_SAVE_STORAGE_KEY = 'tcs_game_saves_v1';
     const MAX_GAME_SAVE_SLOTS = 8;
 
@@ -1950,6 +1954,27 @@ function getAtcfTypeCode(windKts, isExtratropical, isSubtropical, isInvest = fal
             const tendency = Number(state.cyclone?.shearTendencyKt || 0);
             const trend = Math.abs(tendency) < 0.4 ? 'steady' : (tendency > 0 ? 'rising' : 'falling');
             shearMeta.textContent = `${shearClass} ${directionToCompass(shearDir)} ${trend}`;
+        }
+        const structure = state.cyclone?.stormStructure || {};
+        const eyeMaturity = Math.max(0, Math.min(100, Math.round(Number(structure.eyeMaturity || 0) * 100)));
+        const bandingMaturity = Math.max(0, Math.min(100, Math.round(Number(structure.bandingMaturity || 0) * 100)));
+        if (eyeStatusCounter) {
+            eyeStatusCounter.textContent = structure.eyeStatus || 'NO EYE';
+            eyeStatusCounter.className = `font-mono font-bold text-sm leading-tight ${
+                eyeMaturity >= 65 ? 'text-cyan-100' : (eyeMaturity >= 20 ? 'text-sky-200' : 'text-slate-300')
+            }`;
+        }
+        if (eyeMaturityCounter) {
+            eyeMaturityCounter.textContent = `${eyeMaturity}% CORE`;
+        }
+        if (bandingStatusCounter) {
+            bandingStatusCounter.textContent = structure.bandingStatus || 'RAGGED BANDS';
+            bandingStatusCounter.className = `font-mono font-bold text-sm leading-tight ${
+                bandingMaturity >= 65 ? 'text-sky-100' : (bandingMaturity >= 25 ? 'text-blue-200' : 'text-slate-300')
+            }`;
+        }
+        if (bandingMaturityCounter) {
+            bandingMaturityCounter.textContent = `${bandingMaturity}% CURVE`;
         }
         updateInvestPanel();
     }

@@ -1459,6 +1459,8 @@ function drawStormGlyph(container, projection, cyclone) {
     const shapeSeed = Math.max(0, Math.min(0.999, finiteOr(structure.shapeSeed, 0.5)));
     const eyeClosing = Math.max(0, Math.min(1, finiteOr(structure.eyeClosing, 0)));
     const eyeOpenFraction = Math.max(0, Math.min(1, finiteOr(structure.eyeOpenFraction, 1)));
+    const eyeMaturity = Math.max(0, Math.min(1, finiteOr(structure.eyeMaturity, eyeOpenFraction)));
+    const bandingMaturity = Math.max(0, Math.min(1, finiteOr(structure.bandingMaturity, intensity >= 96 ? 0.7 : 0.35)));
     const fragmentation = Math.max(0, Math.min(1, finiteOr(structure.bandFragmentation, 0)));
     const coreRoundness = Math.max(0.25, Math.min(1.2, finiteOr(structure.coreRoundness, 0.75)));
     const asymmetry = Math.max(0, Math.min(1.8, finiteOr(structure.asymmetry, 0)));
@@ -1486,8 +1488,9 @@ function drawStormGlyph(container, projection, cyclone) {
     const coreY = Math.sin(shearAngle) * stormOffset;
 
     if (intensity >= 34) {
-        const coreRx = radius * (0.34 + coreRoundness * 0.25) * shape.cdo * shape.stretch;
-        const coreRy = radius * (0.28 + coreRoundness * 0.23) * shape.cdo;
+        const immatureCore = 1 - bandingMaturity;
+        const coreRx = radius * (0.34 + coreRoundness * 0.25 + immatureCore * 0.06) * shape.cdo * shape.stretch;
+        const coreRy = radius * (0.28 + coreRoundness * 0.23 + immatureCore * 0.05) * shape.cdo;
         glyph.append("ellipse")
             .attr("cx", coreX)
             .attr("cy", coreY)
@@ -1498,12 +1501,12 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("stroke", shapeFamily === 'annular' ? "#f8fafc" : cat.color)
             .attr("stroke-width", shapeFamily === 'annular' ? 2 : 0.9)
             .attr("stroke-opacity", shapeFamily === 'annular' ? 0.66 : 0.42)
-            .attr("fill-opacity", shapeFamily === 'annular' ? 0 : Math.max(0.14, 0.32 - fragmentation * 0.14 + eyeClosing * 0.16))
+            .attr("fill-opacity", shapeFamily === 'annular' ? 0 : Math.max(0.14, 0.32 - fragmentation * 0.14 + eyeClosing * 0.16 + immatureCore * 0.1))
             .attr("vector-effect", "non-scaling-stroke")
             .style("filter", "drop-shadow(0 0 7px rgba(186,230,253,0.30))");
     }
 
-    const lobeCount = Math.max(0, shape.lobeCount || 0);
+    const lobeCount = Math.max(0, Math.round((shape.lobeCount || 0) * (0.55 + bandingMaturity * 0.45)));
     for (let i = 0; i < lobeCount; i++) {
         const angle = baseAngle + hemi * (i * Math.PI * 2 / Math.max(1, lobeCount) + shapeSeed * 1.7);
         const lobeRange = radius * (0.34 + ((i + Math.round(shapeSeed * 5)) % 3) * 0.16 + asymmetry * 0.18);
@@ -1532,10 +1535,10 @@ function drawStormGlyph(container, projection, cyclone) {
             : 1;
         for (let i = 0; i <= 30; i++) {
             const t = i / 30;
-            const reach = shape.reach * (0.86 + armBias * 0.18);
+            const reach = shape.reach * (0.62 + bandingMaturity * 0.38) * (0.86 + armBias * 0.18);
             const r = radius * (0.16 + t * reach);
             const raggedPulse = Math.sin(t * Math.PI * (4 + fragmentation * 4) + arm * 1.7 + phase);
-            const wobble = raggedPulse * (1.1 + asymmetry * 1.8) * shape.wobble;
+            const wobble = raggedPulse * (1.1 + asymmetry * 1.8 + (1 - bandingMaturity) * 1.4) * shape.wobble;
             const angle = baseAngle + hemi * (t * shape.turn + arm * (Math.PI * 2 / configuredArms));
             const shearPush = Math.max(0, Math.cos(angle - shearAngle)) * asymmetry * radius * 0.12;
             points.push({
@@ -1548,10 +1551,10 @@ function drawStormGlyph(container, projection, cyclone) {
             .attr("d", line(points))
             .attr("fill", "none")
             .attr("stroke", arm % 2 === 0 ? "#e0f2fe" : cat.color)
-            .attr("stroke-width", (intensity >= 64 ? 2.2 : 1.7) * shape.width)
+            .attr("stroke-width", (intensity >= 64 ? 2.2 : 1.7) * shape.width * (0.72 + bandingMaturity * 0.28))
             .attr("stroke-linecap", "round")
-            .attr("stroke-dasharray", fragmentation > 0.6 && arm % 2 ? "5 3" : null)
-            .attr("stroke-opacity", (intensity >= 34 ? 0.82 : 0.58) * (1 - fragmentation * 0.22))
+            .attr("stroke-dasharray", (fragmentation > 0.6 || bandingMaturity < 0.42) && arm % 2 ? "5 3" : null)
+            .attr("stroke-opacity", (intensity >= 34 ? 0.82 : 0.58) * (1 - fragmentation * 0.22) * (0.48 + bandingMaturity * 0.52))
             .attr("vector-effect", "non-scaling-stroke")
             .style("filter", "drop-shadow(0 0 5px rgba(125,211,252,0.45))");
     }
@@ -1581,6 +1584,20 @@ function drawStormGlyph(container, projection, cyclone) {
         ? Math.max(1.4, Math.min(7.5, structure.eyeRadiusKm / 5.5))
         : 0;
     const eyePx = rawEyePx * Math.max(0, eyeOpenFraction);
+
+    if (intensity >= 64 && eyeMaturity > 0.08 && eyePx <= 1.05 && eyeClosing < 0.72) {
+        glyph.append("ellipse")
+            .attr("class", "storm-eye-forming")
+            .attr("rx", Math.max(2.2, radius * (0.1 + eyeMaturity * 0.06)))
+            .attr("ry", Math.max(1.4, radius * (0.05 + eyeMaturity * 0.04)))
+            .attr("transform", `rotate(${(shapeSeed * 170 - 20) * hemi})`)
+            .attr("fill", "none")
+            .attr("stroke", "#f8fafc")
+            .attr("stroke-width", 0.9)
+            .attr("stroke-dasharray", "2 2")
+            .attr("stroke-opacity", 0.28 + eyeMaturity * 0.38)
+            .attr("vector-effect", "non-scaling-stroke");
+    }
 
     if (eyeClosing > 0.12 && intensity >= 64) {
         glyph.append("ellipse")

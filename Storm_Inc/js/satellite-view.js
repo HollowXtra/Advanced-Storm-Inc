@@ -361,16 +361,30 @@ export function updateSatelliteView(intensityKnots, age, latitude, isExtratropic
     const eyeKm = Number(structure?.eyeRadiusKm || 0);
     const eyeClosing = Math.max(0, Math.min(1, Number(structure?.eyeClosing || 0)));
     const eyeOpenFraction = Math.max(0, Math.min(1, Number(structure?.eyeOpenFraction ?? 1)));
+    const eyeMaturity = Math.max(0, Math.min(1, Number(structure?.eyeMaturity ?? eyeOpenFraction)));
+    const bandingMaturity = Math.max(0, Math.min(1, Number(structure?.bandingMaturity ?? (intensityKnots >= 96 ? 0.7 : 0.35))));
     const bandFragmentation = Math.max(0, Math.min(1, Number(structure?.bandFragmentation || 0)));
     const shapeFamily = structure?.shapeFamily || 'classic';
     target.rainShield = Math.max(0, Math.min(1, Number(structure?.rainShieldKm || 0) / 950));
 
-    if (pinholeScore > 0.55 && intensityKnots >= 96) {
+    if (pinholeScore > 0.55 && intensityKnots >= 96 && eyeMaturity > 0.64) {
         target.eye = Math.max(0.006, target.eye * 0.42);
         target.spiral += 0.25;
         target.distortion *= 0.65;
-    } else if (eyeKm > 0 && intensityKnots >= 64) {
-        target.eye = Math.max(0.008, Math.min(0.085, eyeKm / 520));
+    } else if (eyeKm > 0 && intensityKnots >= 64 && eyeMaturity > 0.18) {
+        target.eye = Math.max(0.006, Math.min(0.085, eyeKm / 520) * (0.35 + eyeMaturity * 0.65));
+    }
+
+    if (intensityKnots >= 64 && !isExtratropical && !isSubtropical) {
+        target.spiral *= 0.64 + bandingMaturity * 0.4;
+        target.distortion += (1 - bandingMaturity) * 0.12;
+        target.asymStrength += (1 - bandingMaturity) * 0.2;
+        target.centralMass += (1 - eyeMaturity) * 0.12;
+        if (eyeMaturity < 0.18) {
+            target.eye = Math.min(target.eye, -0.04);
+        } else if (eyeMaturity < 0.48) {
+            target.eye *= 0.42 + eyeMaturity * 0.95;
+        }
     }
 
     if (ercState === 'weakening') {
